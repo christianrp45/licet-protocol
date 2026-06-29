@@ -1,0 +1,66 @@
+# Secrets — never commit
+.env
+*.db
+*.sqlite
+
+# Source code — stays on local server only
+main.py
+api/
+core/
+zkp/
+ledger/
+hardware/
+requirements.txt
+runtime.txt
+Procfile
+Dockerfile
+docker-compose.yml
+cloudbuild.yaml
+.dockerignore
+.env.example
+
+# Internal strategy — not for public
+CEO_PLAYBOOK.md
+MASTER_PLAN.md
+SECURITY_PROTOCOL.md
+docs/inpi/
+docs/anpd/
+docs/CEO_PLAYBOOK.pdf
+docs/MASTER_PLAN.pdf
+docs/SUBMISSAO_ARXIV.pdf
+docs/INPI_REGISTRO_LICET.pdf
+
+# Draft/legacy docs
+docs/arxiv/SUBMISSAO_ARXIV.md
+docs/arxiv/licet-preprint.tex
+docs/arxiv/licet-preprint.zip
+docs/arxiv/licet_protocol.zip
+docs/arxiv/7018458.pdf
+docs/licet_protocol.zip
+docs/licet_protocol.docx
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
