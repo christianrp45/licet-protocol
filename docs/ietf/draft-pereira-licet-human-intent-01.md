@@ -188,7 +188,7 @@ LICET provides the technical substrate for these operational requirements.
 LICET maps onto the IETF RATS architecture (RFC 9334 {{RFC9334}}). In LICET
 deployments, the wearable device acts as a Sub-Attester, the mobile
 application acts as Lead Attester, and the LICET Server acts as Verifier.
-This Composite Attester topology (RFC 9334 Section 3.1.4) is not fully
+This Composite Attester topology (RFC 9334 Section 3.3) is not fully
 specified in this document; a separate specification defining the wearable
 Sub-Attester role and its chain of trust is designated as a future work
 item (see Section 10).
@@ -633,7 +633,7 @@ normatively specified.
 ## RATS Composite Attester Mapping
 
 In LICET deployments following the RATS Composite Attester topology
-(RFC 9334 Section 3.1.4):
+(RFC 9334 Section 3.3):
 
 - **Sub-Attester**: Wearable device (physiological signal source)
 - **Lead Attester**: Mobile application (Evidence aggregator)
