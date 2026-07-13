@@ -120,6 +120,7 @@ authorization properties required for high-stakes AI agent actions.
 \centering
 \caption{Authorization properties of existing mechanisms vs.\ LICET v2.}
 \label{tab:intent-gap}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Mechanism} & \textbf{Identity} & \textbf{Liveness} &
@@ -133,7 +134,8 @@ Digital signature & \checkmark & \texttimes & \texttimes & \texttimes & \texttim
 HR/HRV threshold  & \texttimes & \checkmark & $\sim$ & $\sim$ & \texttimes \\
 \textbf{LICET v2} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 \subsection{Motivating Scenarios}
@@ -504,22 +506,13 @@ dissociation that the fusion model flags:
 \begin{equation}
 \text{Attack}(\mathbf{z}) =
 \begin{cases}
-\texttt{BETA\_BLOCKER}    & z_5 < -2.0
-  \;\text{(tremor absent)}
-  \land (\Delta HR_{\text{baseline}} > 15\%) \\
-\texttt{ANTICHOLINERGIC}  & z_2 < -1.5
-  \;\text{(EDA suppressed)}
-  \land z_1 > +1.0
-  \;\text{(HR elevated)}
-  \land x_4 > 0
-  \;\text{(skin warm)} \\
-\texttt{OPIOID}           & z_6 < -2.0
-  \;\text{(respiratory depressed)}
-  \land x_4 > 0
-  \;\text{(skin warm)}
-  \land z_1 < 0
-  \;\text{(bradycardia)} \\
-\texttt{COMBINED}         & \text{two or more attack patterns simultaneously}
+\texttt{BETA\_BLOCKER}   & z_5 < -2.0 \land \Delta HR_{\text{base}} > 15\%
+                           \;\text{(tremor}\downarrow\text{)} \\[4pt]
+\texttt{ANTICHOLINERGIC} & z_2 < -1.5 \land z_1 > +1.0 \land x_4 > 0
+                           \;\text{(EDA}\downarrow\text{, HR}\uparrow\text{)} \\[4pt]
+\texttt{OPIOID}          & z_6 < -2.0 \land x_4 > 0 \land z_1 < 0
+                           \;\text{(RR}\downarrow\text{, warm, brady)} \\[4pt]
+\texttt{COMBINED}        & \text{two or more patterns simultaneously}
 \end{cases}
 \label{eq:pharmattack}
 \end{equation}
@@ -714,9 +707,9 @@ L_n &= \text{SHA256}(entry_n \,\|\, L_{n-1}), \quad n \geq 1
 
 where $entry_n$ contains the intent hash, fusion verdict, pharmacological
 attack flags (if any), trust level $\ell$, ZKP proof $\pi$, and timestamp.
-The ledger endpoint \texttt{GET /v1/ledger/integrity} recomputes the full
-chain, allowing any observer to detect retroactive tampering without a trusted
-third party.
+The ledger endpoint \texttt{GET /v1/\allowbreak ledger/\allowbreak integrity}
+recomputes the full chain, allowing any observer to detect retroactive
+tampering without a trusted third party.
 
 % ──────────────────────────────────────────────────────────────────────────────
 \section{Security Analysis}
