@@ -7,7 +7,7 @@
 **Data:** 13 de julho de 2026 (atualizado — submetido ao arXiv cs.CR)  
 **URL de referência:** https://licet.dev  
 **Anterioridade:** NeuroTrust_Master_Protocol_v1.pdf.ots — 25/02/2026 (OpenTimestamps)  
-**arXiv:** cs.CR submit/7765569 (submetido 13/07/2026 — CC BY — cs.CR + cs.AI + cs.HC)  
+**IACR ePrint:** 2026/110546 (submetido 13/07/2026 — Cryptographic Protocols — CC BY)  
 **IETF Internet-Draft:** draft-pereira-licet-human-intent-01 (submetido 02/07/2026)  
 **SSRN:** Abstract ID 7018458 v2 (atualizado 02/07/2026)
 
