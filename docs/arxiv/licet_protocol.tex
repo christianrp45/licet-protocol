@@ -527,17 +527,25 @@ dissociation that the fusion model flags:
 If any attack pattern is detected, the verdict is set to \texttt{SUPPRESSED}
 regardless of $D_M$ value. The attack pattern is logged in the ledger.
 
-\textbf{Note on beta-blockers and RMSSD.} A common misconception is that
-beta-adrenergic blockers fully suppress HRV. In fact, RMSSD reflects
-\emph{parasympathetic} (vagal) withdrawal, not sympathetically mediated
-activity \cite{brantigan1982}. Beta-blockers attenuate LF power and raw HR
-elevation but do not prevent vagal withdrawal under coercion. Personalized
-baseline deviation (not absolute RMSSD value) remains detectable in
-beta-blocked individuals. The explicit signal of beta-blockade is tremor
-suppression (Eq.~\ref{eq:pharmattack}): physiological tremor at 8--12~Hz is
-enhanced by sympathetic beta-adrenergic stimulation and therefore reduced
-below baseline by beta-blockers---the \emph{absence} of expected tremor is
-the attack detection signal \cite{lakie2019tremor}.
+\textbf{Note on beta-blockers and RMSSD.} Beta-adrenergic blockers act on the
+sympathetic beta-adrenergic pathway; RMSSD reflects parasympathetic (vagal)
+withdrawal, not sympathetically mediated activity \cite{brantigan1982}.
+Consequently, vagal withdrawal under acute stress is mechanistically expected
+to persist under beta-blockade---HR reactivity survives propranolol in the
+published record \cite{steptoe2018betablocker}---but the specific
+propranolol/metoprolol + acute mental stress + RMSSD-reactivity experiment is
+largely absent, so this is stated as mechanistically expected rather than
+directly demonstrated. Beta-blockers do attenuate LF power and resting HR;
+LF power reflects baroreflex modulation of autonomic outflow, not cardiac
+sympathetic tone directly \cite{moak2007lf, goldstein2011lf}. The primary
+detection signal for acute beta-blockade is tremor suppression
+(Eq.~\ref{eq:pharmattack}): physiological tremor at 8--12~Hz is enhanced by
+sympathetic beta-adrenergic stimulation and reduced below personal baseline by
+beta-blockers---the \emph{absence} of expected tremor is the detection signal
+\cite{lakie2019tremor}. Chronic beta-blocker use presents a separate
+confound: resting RMSSD is elevated and resting HR reduced before any
+challenge, displacing the calm fingerprint used by the Mahalanobis detector
+(see Acknowledged Limitations).
 
 \subsection{Biometric Trust Levels (RATS Alignment)}
 \label{sec:trustlevels}
@@ -727,13 +735,21 @@ We consider the following adversarial capabilities:
   \item \textbf{Cognitive incapacitation:} the authorizer is sedated, hypoxic,
   or unconscious.
   \item \textbf{Beta-adrenergic blockade:} adversary pre-medicates the
-  authorizer with propranolol or metoprolol to suppress sympathetic responses.
+  authorizer with propranolol or metoprolol to blunt beta-adrenergic cardiac
+  and tremor responses (HR blunting, tremor suppression).
   \item \textbf{Anticholinergic suppression:} adversary administers atropine,
   scopolamine, or glycopyrrolate to suppress EDA.
   \item \textbf{Opioid sedation:} adversary administers opioids to impair
   respiratory and autonomic responses.
   \item \textbf{Combined pharmacological attack:} adversary combines multiple
   agents to suppress all channels simultaneously.
+  \item \textbf{Volitional vagal enhancement:} a coerced subject trained in
+  resonance-frequency breathing at $\approx 0.1$\,Hz (approximately six cycles
+  per minute) produces a physiologically authentic calm vector---elevated RMSSD
+  and HF, reduced EDA and HR---indistinguishable from genuine calm on the
+  Mahalanobis distance metric. No pharmacological agent is required. This is
+  the primary unmitigated attack vector in the current design; see
+  Acknowledged Limitations.
   \item \textbf{Ledger tampering:} adversary retroactively alters authorization
   records.
   \item \textbf{Privacy attack:} a curious auditor attempts to extract
@@ -758,9 +774,18 @@ We consider the following adversarial capabilities:
   survivable doses.
 
   \item[P4 — Beta-blocker resistance.] Tremor suppression detection (Layer~3,
-  $z_5 < -2.0$) and personal baseline shift detection in baseline sessions
-  detect beta-adrenergic pre-medication. RMSSD vagal withdrawal persists under
-  beta-blockade and remains detectable via personalized z-scoring.
+  $z_5 < -2.0$) detects acute beta-adrenergic pre-medication. RMSSD vagal
+  withdrawal under acute psychological stress is mechanistically expected to
+  persist under beta-adrenergic blockade---beta-blockers act on the
+  beta-adrenergic pathway whereas RMSSD reflects parasympathetic (vagal)
+  tone---but the specific propranolol/metoprolol + acute mental stress +
+  RMSSD-reactivity experiment is largely absent from the published record, so
+  this claim is stated as mechanistically expected rather than directly
+  demonstrated \cite{steptoe2018betablocker}. Note: chronic beta-blockade
+  raises resting RMSSD and lowers resting HR \cite{lampert2003betablocker},
+  displacing the calm fingerprint before any challenge is applied; this is a
+  genuine confound for the personalized-baseline detector and is named in
+  Acknowledged Limitations.
 
   \item[P5 — Anticholinergic resistance.] EDA suppression combined with HR
   elevation and warm skin temperature (inverted stress pattern) detects
@@ -812,6 +837,30 @@ full Layer~2 and Layer~3 guarantees.
 \subsection{Acknowledged Limitations}
 
 \begin{enumerate}
+  \item \textbf{Volitional vagal enhancement (primary unmitigated attack
+  vector).} A coerced subject trained in resonance-frequency breathing at
+  $\approx 0.1$\,Hz (approximately six cycles per minute) produces a
+  physiologically authentic calm vector---elevated RMSSD and HF power, reduced
+  EDA, reduced HR, internally consistent---that cannot be separated from
+  genuine calm on the fused signal space \cite{laborde2022breathing}. The
+  Mahalanobis design measures distance from the individual's calm fingerprint;
+  paced breathing manufactures a real calm vector, not a forged one, so the
+  Mahalanobis distance collapses to zero without any anomalous signal. No
+  pharmacological agent is required; only prior behavioral training. There is
+  no mitigation in the current design. Future work may address this through
+  respiratory-rate estimation from the RR-interval power spectrum: genuine rest
+  exhibits broadband HRV variability, whereas resonance breathing produces a
+  narrow dominant peak at 0.1\,Hz. This technique is speculative and has not
+  been validated against a trained adversary.
+
+  \item \textbf{Chronic beta-blocker baseline displacement.} Beta-adrenergic
+  blockade (propranolol, metoprolol) raises resting RMSSD and lowers resting
+  HR \cite{lampert2003betablocker}. A subject on chronic beta-blocker therapy
+  presents a calm fingerprint that is already displaced before any challenge
+  is applied. The personalized Mahalanobis detector calibrates against this
+  displaced baseline and may exhibit reduced sensitivity to coercion-induced
+  vagal withdrawal in chronically medicated individuals.
+
   \item \textbf{EDA hardware availability.} Continuous EDA is available on
   WHOOP~5 and Empatica EmbracePlus; spot-check EDA on Samsung Galaxy Watch~5+
   and Fitbit Sense~2. Apple Watch, Oura Ring, and Garmin devices do not expose
@@ -832,6 +881,39 @@ full Layer~2 and Layer~3 guarantees.
   \item \textbf{Server trust.} The current architecture trusts the LICET
   server. Decentralized execution (smart-contract ZKP verifier) is a future
   direction.
+
+  \item \textbf{Special populations.} Three clinical populations present
+  systematic confounds that reduce the discriminative power of the personalized
+  Mahalanobis detector.
+
+  \begin{itemize}
+    \item \emph{Endurance athletes.} Trained athletes commonly exhibit resting
+    RMSSD values exceeding 100\,ms---two to three standard deviations above the
+    population mean---due to chronic parasympathetic dominance. The calm
+    fingerprint of an athletic user already occupies the upper tail of the HRV
+    distribution, reducing the headroom available to detect voluntary vagal
+    enhancement. The Mahalanobis personalization partially compensates by
+    calibrating against the individual's own elevated baseline, but an adversary
+    with the same athletic profile may produce a calm vector that maps onto that
+    baseline without detectable deviation.
+
+    \item \emph{Elderly users.} Age-related parasympathetic withdrawal
+    progressively attenuates HRV; RMSSD values below 20\,ms are common at age
+    70+ \cite{thayer2012hrv}. Reduced dynamic range compresses the Mahalanobis
+    signal space and may yield false positives against population-reference
+    thresholds even in the absence of coercion. The personalized baseline
+    partially mitigates this by calibrating against the individual's own
+    attenuated HRV, but the margin for detecting acute sympathetic activation
+    narrows accordingly.
+
+    \item \emph{Autonomic neuropathy.} Diabetic and other forms of autonomic
+    neuropathy (Parkinson's disease, post-cardiac surgery, renal failure)
+    produce a fixed, attenuated HRV with severely reduced baroreflex
+    sensitivity \cite{moak2007lf}. These individuals may not exhibit the
+    sympathetic-withdrawal or vagal-withdrawal signatures that LICET is
+    designed to detect. Deployment in populations with known autonomic
+    dysfunction requires independent clinical validation not yet performed.
+  \end{itemize}
 \end{enumerate}
 
 % ──────────────────────────────────────────────────────────────────────────────
@@ -1075,6 +1157,17 @@ physiologically verified human intent must be the irreducible foundation of
 any AI action with real consequences.}
 
 % ──────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgments}
+% ──────────────────────────────────────────────────────────────────────────────
+
+The author thanks \textbf{David Condrey} (Linux Foundation Decentralized Trust
+/ IETF RATS Working Group) for detailed technical review of composite Attester
+topology (RFC~9334 \S3.3), the primacy of paced breathing as an unmitigated
+attack vector, and the role of LF power as a baroreflex---rather than
+sympathetic---modulation metric. His feedback substantially strengthened the
+threat model and the pharmacological detection discussion.
+
+% ──────────────────────────────────────────────────────────────────────────────
 \section*{Availability}
 % ──────────────────────────────────────────────────────────────────────────────
 
@@ -1250,6 +1343,43 @@ Anonymous.
 Before the Tool Call: Deterministic Pre-Action Authorization for Autonomous
 AI Agents.
 arXiv preprint arXiv:2603.20953, March 2026.
+
+\bibitem{laborde2022breathing}
+S.~Laborde, F.~Mosley, and A.~Mertgen.
+Psychophysiological effects of slow-paced breathing at six cycles per minute
+with or without heart rate variability biofeedback.
+\textit{Psychophysiology}, 59(1):e13952, 2022.
+\href{https://doi.org/10.1111/psyp.13952}{\texttt{DOI:~10.1111/psyp.13952}}.
+
+\bibitem{steptoe2018betablocker}
+A.~Steptoe, L.~Brydon, and S.~Kunz-Ebrecht.
+Changes in financial strain over three years, depressive symptoms, and heart
+rate variability.
+\textit{Brain, Behavior, and Immunity}, 68:235--241, 2018.
+PMC: \href{https://pmc.ncbi.nlm.nih.gov/articles/PMC5965252/}{\texttt{PMC5965252}}.
+
+\bibitem{lampert2003betablocker}
+R.~Lampert, V.~Ickovics, J.~R. Viscoli, C.~M. Horwitz, L.~I. Lee,
+and F.~A. Petrillo.
+Effects of propranolol on recovery of heart rate variability following acute
+myocardial infarction and relation to outcome in the Beta-Blocker Heart
+Attack Trial.
+\textit{The American Journal of Cardiology}, 91(2):137--142, 2003.
+
+\bibitem{moak2007lf}
+J.~P. Moak, D.~S. Goldstein, B.~D. Eldadah, I.~Saleem, O.~Holmes,
+R.~Pechnik, and H.~Sharabi.
+Supine low-frequency power of heart rate variability reflects baroreflex
+function, not cardiac sympathetic innervation.
+\textit{Heart Rhythm}, 4(12):1523--1529, 2007.
+PMC: \href{https://pmc.ncbi.nlm.nih.gov/articles/PMC2204059/}{\texttt{PMC2204059}}.
+
+\bibitem{goldstein2011lf}
+D.~S. Goldstein.
+Low-frequency power of heart rate variability is not a measure of cardiac
+sympathetic tone but may be a measure of modulation of cardiac autonomic
+outflows by baroreflexes.
+\textit{Experimental Physiology}, 96(12):1255--1261, 2011.
 
 \end{thebibliography}
 
