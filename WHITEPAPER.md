@@ -4,9 +4,10 @@
 
 **Autor:** Christian Rodrigues Pereira  
 **Organização:** NeuroTrust  
-**Data:** 2 de julho de 2026  
+**Data:** 13 de julho de 2026 (atualizado — submetido ao arXiv cs.CR)  
 **URL de referência:** https://licet.dev  
 **Anterioridade:** NeuroTrust_Master_Protocol_v1.pdf.ots — 25/02/2026 (OpenTimestamps)  
+**arXiv:** cs.CR submit/7765569 (submetido 13/07/2026 — CC BY — cs.CR + cs.AI + cs.HC)  
 **IETF Internet-Draft:** draft-pereira-licet-human-intent-01 (submetido 02/07/2026)  
 **SSRN:** Abstract ID 7018458 v2 (atualizado 02/07/2026)
 
@@ -27,10 +28,13 @@ A versão 2.0 do protocolo introduz **três camadas biométricas independentes**
 3. **Camada 3 — Distância de Mahalanobis multivariada:** D_M = √((z − μ_calm)ᵀ S⁻¹ (z − μ_calm)) sobre cinco sinais simultâneos: RMSSD, EDA-SCL, EDA-SCR, delta de temperatura cutânea e tremor na banda 8–12 Hz. Baseline personalizado (≥ 5 sessões × ≥ 3 min, validade 30 dias). Não é detecção binária: é *elevação do custo de coerção* — o adversário precisa manipular cinco sinais independentes ao mesmo tempo.
 
 O protocolo combina essas três camadas com:
-- **Assinatura criptográfica vinculada ao evento** — Intent Hash + Biometric Signature (HMAC-SHA256)
-- **Prova de Conhecimento Zero (ZKP)** — auditabilidade sem exposição de dados biométricos
-- **Ledger hash-chained** — registro imutável e matematicamente verificável
+- **Assinatura criptográfica assimétrica** — Intent Hash + Biometric Signature (Ed25519) — verificável por terceiros sem acesso ao servidor
+- **UI Binding criptográfico** — commitment SHA256(action|agent_id|target|nonce) comprometido antes da captura biométrica, impedindo manipulação por agente AI
+- **Prova de Conhecimento Zero (ZKP)** — auditabilidade sem exposição de dados biométricos; witness = HKDF(k_m, intent_hash), nunca exposto no ledger
+- **Ledger hash-chained com ancoragem externa** — Merkle root publicado no OpenTimestamps (3 calendários); server_nonce por entrada impede reescrita retroativa
 - **Hierarquia de confiança L0-L3** — alinhada ao RFC 9334 (IETF RATS)
+- **Shamir Secret Sharing (5,3)** — proteção da chave mestre k_m contra perda catastrófica
+- **Minimização de dados biométricos** — ecg_waveform e rr_intervals zerados pós-extração; endpoints GDPR Art. 15/17 e LGPD Art. 18 VI
 
 ---
 
@@ -105,20 +109,29 @@ LICET inicia captura biométrica (≥ 60 segundos)
 │  fisiológico incompatível com autorização)      │
 └─────────────────────────────────────────────────┘
          ↓ (todas as camadas aprovadas)
+UI Binding Check
+SHA256(action | agent_id | target | nonce) — comprometido antes da captura
+ui_binding_status: VERIFIED | ABSENT | FAILED
+         ↓
 Geração do Intent Hash
 H(ação + agente + alvo + timestamp)
          ↓
 Derivação de chave de sessão
 HKDF(chave_mestre, intent_hash)
          ↓
-Assinatura Biométrica Temporal
-HMAC(intent_hash + biometria_resumida, session_key)
+Assinatura Biométrica Assimétrica (Ed25519)
+Ed25519(intent_hash + biometria_resumida, chave_privada_servidor)
+— verificável por qualquer auditor com a chave pública (GET /signing-key)
          ↓
 Zero-Knowledge Proof (Schnorr/BN128)
+witness = HKDF(k_m, intent_hash) — nunca armazenado no ledger
 Prova sem revelar biometria
          ↓
 Registro no Ledger Hash-Chained
-SHA256(conteúdo + hash_anterior)
+server_nonce = secrets.token_hex(16)  — gerado pelo servidor por entrada
+SHA256(conteúdo + hash_anterior + server_nonce)
+         ↓
+Ancoragem no OpenTimestamps (Merkle root — 3 calendários independentes)
          ↓
 AUTORIZADO ✓
 ```
@@ -185,26 +198,49 @@ intent_hash = SHA256(ação + agente_id + alvo + timestamp)
 
 Qualquer alteração em qualquer parâmetro gera um hash completamente diferente. O Intent Hash é o que vincula matematicamente a autorização biométrica à ação específica.
 
-#### 2.3.4 Assinatura Biométrica Temporal
+#### 2.3.4 Assinatura Biométrica Assimétrica (Ed25519)
+
+A versão anterior usava HMAC-SHA256 simétrico — o servidor que gerava a assinatura era simultaneamente o único capaz de verificá-la, tornando a auditoria por terceiros impossível sem acesso à chave mestre (GAP-C02, implementado 09/07/2026).
 
 ```
 session_key    = HKDF(chave_mestre, intent_hash)
-bio_signature  = HMAC-SHA256(intent_hash + {RMSSD, EDA-SCL, EDA-SCR, ΔTemp, tremor, ECG_cosine, timestamp}, session_key)
+bio_signature  = Ed25519.sign(
+                     intent_hash + {RMSSD, EDA-SCL, EDA-SCR, ΔTemp, tremor, ECG_cosine, timestamp},
+                     server_private_key
+                 )
 ```
+
+**Chave pública disponível para auditores:** `GET /signing-key` retorna a chave pública Ed25519 do servidor, permitindo que qualquer auditor independente verifique a assinatura sem acesso a segredos do servidor.
 
 **Propriedades:**
 - Única por evento — não pode ser reutilizada
 - Vinculada à ação específica — não pode ser transferida
 - Temporalmente situada — o timestamp é parte da assinatura
 - Não reversível — os dados biométricos brutos não podem ser recuperados da assinatura
+- **Verificável por terceiros** — auditor externo valida com chave pública; servidor não pode negar ter produzido a assinatura
+
+#### 2.3.4a Proteção da Chave Mestre — Shamir Secret Sharing (GAP-O02)
+
+A chave mestre `k_m` é o segredo central do protocolo. Sua perda tornaria todo o histórico de autorizações inverificável; seu comprometimento permitiria reforjar qualquer assinatura histórica.
+
+Implementado em 09/07/2026: Shamir Secret Sharing sobre GF(2^256+297), configuração (n=5, threshold=3):
+
+```
+POST /admin/key/split   — divide k_m em 5 shares; qualquer 3 reconstroem a chave
+POST /admin/key/combine — reconstrução (restrita a ambiente de recuperação controlado)
+```
+
+**Propriedade:** nenhum custodiano individual possui k_m. Um adversário precisaria comprometer pelo menos 3 dos 5 custodiantes geograficamente distribuídos. Perda de até 2 shares não compromete a recuperação.
 
 #### 2.3.5 Zero-Knowledge Proof (Schnorr / BN128)
 
-O LICET implementa uma prova Schnorr sobre a curva elíptica BN128 (a mesma usada pelo Ethereum):
+O LICET implementa uma prova Schnorr sobre a curva elíptica BN128 (a mesma usada pelo Ethereum).
+
+**Witness seguro (GAP-C01, implementado 09/07/2026):** o witness é derivado como `w = HKDF(k_m, intent_hash)` — nunca armazenado no ledger e inacessível a observadores. Versões anteriores usavam `SHA256(bio_signature || intent_hash)`, computável por qualquer observador do ledger, invalidando a propriedade zero-knowledge.
 
 ```
 # Geração da prova
-secret    = SHA256(bio_signature || intent_hash) mod order
+secret    = HKDF(k_m, intent_hash) mod order   # witness secreto — não no ledger
 public_key = secret × G          # Ponto público na curva
 r          = random nonce
 R          = r × G               # Commitment
@@ -217,16 +253,64 @@ s×G + challenge×PK == R  →  VÁLIDO
 
 **O que isso garante:** um auditor pode verificar matematicamente que "uma entidade com conhecimento da assinatura biométrica autorizou esta ação específica" sem nunca ter acesso aos dados biométricos reais.
 
-#### 2.3.6 Ledger Hash-Chained
+#### 2.3.6 Ledger Hash-Chained com Irretratabilidade (GAP-C03, GAP-C04)
 
-Cada registro no ledger contém o hash do registro anterior:
+Cada registro no ledger contém o hash do registro anterior e um nonce gerado pelo servidor:
 
 ```
-chain_hash[n] = SHA256(conteúdo[n] + chain_hash[n-1])
-chain_hash[0] = SHA256(conteúdo[0] + "GENESIS")
+server_nonce[n] = secrets.token_hex(16)   # gerado pelo servidor, não pelo cliente
+chain_hash[n]   = SHA256(conteúdo[n] + chain_hash[n-1] + server_nonce[n])
+chain_hash[0]   = SHA256(conteúdo[0] + "GENESIS" + server_nonce[0])
 ```
 
-**Propriedade:** qualquer adulteração retroativa em qualquer registro quebra toda a cadeia subsequente, sendo matematicamente detectável sem necessidade de terceiro confiável.
+**Proteção contra backdating (GAP-C04):** o `server_nonce` é gerado pelo servidor no momento da inserção — um cliente malicioso não pode submeter timestamps retroativos porque não conhece o nonce que o servidor gerará para aquela entrada.
+
+**Irretratabilidade externa (GAP-C03):** o Merkle root do ledger é ancorado periodicamente via `POST /ledger/timestamp` em três calendários OpenTimestamps independentes. Isso impede que o operador do servidor reescreva toda a cadeia — a âncora externa prova quando o Merkle root existia.
+
+**Propriedade:** qualquer adulteração retroativa em qualquer registro quebra a cadeia subsequente (detectável localmente) e contradiz o Merkle root ancorado externamente (detectável por terceiros).
+
+#### 2.3.7 UI Binding — Proteção contra Agente AI (GAP-A04)
+
+Em cenários onde um agente AI constrói o request LICET, existe risco de manipulação do `action descriptor`: o agente apresenta ao humano "transferência de R$100" mas assina "transferência de R$100.000".
+
+Implementado em 09/07/2026: commitment scheme criptográfico comprometido **antes** do início da captura biométrica:
+
+```
+ui_binding_commitment = SHA256(action | agent_id | target | nonce)
+```
+
+O commitment é gerado pelo componente sob controle humano (app do usuário) a partir do que é exibido na interface. O servidor verifica que o intent_hash é consistente com o commitment antes de processar a autorização.
+
+**Resposta:** `ui_binding_status` presente em toda resposta de autorização:
+- `VERIFIED` — commitment verificado; o que o humano viu é o que foi assinado
+- `ABSENT` — nenhum commitment submetido (integrador não implementou UI binding)
+- `FAILED` — commitment não corresponde ao intent_hash (possível manipulação detectada)
+
+#### 2.3.8 Equidade em PPG — Fitzpatrick V-VI (GAP-B09)
+
+Sensores PPG de LED verde/vermelho têm absorção aumentada por melanina em peles de tons escuros (Fitzpatrick types V-VI), resultando em erro de medição de HRV de até 30-40% versus ECG de referência (Bent et al., NPJ Digit Med 2020; Mannheimer et al., J Clin Monit Comput 2021).
+
+Sem correção, usuários com peles escuras teriam baselines sistematicamente incorretos, resultando em taxas de falso positivo de negação desproporcionalmente altas — potencial discriminação por característica protegida.
+
+Implementado em 09/07/2026:
+- Campo `skin_tone_fitzpatrick` (1-6, opcional) no `BiometricPushRequest`
+- `threshold_multiplier = 1.4` aplicado automaticamente para Fitzpatrick V-VI com sensor PPG
+- `ppg_equity_warning` incluído na resposta quando o multiplicador está ativo
+- Recomendação: sensores ECG de canal único para deployments de alta consequência com populações de pele escura
+
+#### 2.3.9 Minimização de Dados Biométricos e GDPR (GAP-A05)
+
+Dados fisiológicos brutos (ECG waveform, RR intervals) transitando pelo servidor constituem risco de acumulação de dataset biométrico por operador desonesto ou servidor comprometido.
+
+Implementado em 09/07/2026:
+- Quando `privacy_mode=True`: `ecg_waveform` e `rr_intervals` zerados após extração de features, antes de qualquer persistência
+- O servidor armazena apenas features derivadas (RMSSD, cosine similarity), não sinais brutos
+
+**Endpoints de direitos do titular (LGPD Art. 17-18 / GDPR Art. 15/17):**
+```
+GET    /gdpr/data/{user_id}     — Art. 15 GDPR: direito de acesso; retorna todos os dados armazenados
+DELETE /gdpr/erasure/{user_id}  — Art. 17 GDPR / LGPD Art. 18 VI: direito ao esquecimento
+```
 
 ---
 
@@ -346,6 +430,13 @@ O LICET expõe uma API REST disponível em **https://licet.dev**
 | GET | `/v1/hardware/scan` | Escaneia wearables BLE próximos |
 | POST | `/v1/baseline/session` | Registra sessão de calibração de baseline |
 | GET | `/v1/baseline/status` | Status do baseline do usuário (maturity, expiração) |
+| GET | `/v1/signing-key` | Chave pública Ed25519 para auditores (GAP-C02) |
+| POST | `/v1/ledger/timestamp` | Ancora Merkle root no OpenTimestamps (GAP-C03) |
+| POST | `/v1/admin/key/split` | Shamir split da chave mestre — n=5, threshold=3 (GAP-O02) |
+| POST | `/v1/admin/key/combine` | Reconstrução Shamir — somente em recuperação controlada (GAP-O02) |
+| POST | `/v1/admin/revoke/{ledger_id}` | Revogação aditiva de entrada do ledger (GAP-O03/H03) |
+| GET | `/v1/gdpr/data/{user_id}` | GDPR Art. 15 — direito de acesso (GAP-A05) |
+| DELETE | `/v1/gdpr/erasure/{user_id}` | GDPR Art. 17 / LGPD Art. 18 VI — direito ao esquecimento (GAP-A05) |
 
 ### Exemplo de autorização v2.0
 
@@ -399,13 +490,23 @@ POST /v1/authorize
 | Ameaça | Proteção |
 |---|---|
 | Agente de IA agindo sem autorização | Intent Hash vincula ação à autorização biométrica |
+| Agente AI manipulando action descriptor | UI Binding commitment antes da captura; ui_binding_status na resposta (GAP-A04) |
 | Replay attack (reutilizar autorização antiga) | Timestamp na assinatura — cada autorização é única |
 | Coerção física do autorizante | Camada 3 (D_M) — estado fisiológico incompatível com autorização detectado |
 | Estado cognitivo comprometido | ECG morfologia (Camada 1) + EDA (Camada 2) |
 | Spoofing farmacológico | Check de toxidrome + dissociação de correlações via S⁻¹ |
-| Adulteração retroativa do ledger | Hash-chain — matematicamente detectável |
-| Exposição de dados biométricos em auditoria | ZKP — prova sem revelar dados |
-| Comprometimento da chave mestre | HKDF — chave de sessão única por evento |
+| Medicamentos legítimos causando discriminação | medication_accommodation flag — BETA_BLOCKER_ACCOMMODATED (GAP-L05) |
+| Adulteração retroativa do ledger | Hash-chain + server_nonce + âncora OpenTimestamps (GAP-C03/C04) |
+| Reescrita completa da cadeia pelo servidor | Merkle root em 3 calendários OpenTimestamps independentes (GAP-C03) |
+| Backdating de entradas | server_nonce gerado pelo servidor por entrada (GAP-C04) |
+| Exposição de dados biométricos em auditoria | ZKP com witness HKDF(k_m) não exposto no ledger (GAP-C01) |
+| Auditoria por terceiros impossível | Ed25519 assimétrico; GET /signing-key (GAP-C02) |
+| Comprometimento da chave mestre | Shamir (5,3) — sem HSM, threshold múltiplo de custodiantes (GAP-O02) |
+| Perda da chave mestre | Shamir reconstituição com POST /admin/key/combine (GAP-O02) |
+| Dispositivo comprometido ou roubado | Revogação aditiva POST /admin/revoke/{ledger_id} (GAP-O03/H03) |
+| Baseline poisoned no enrollment | 5-check assessment em build_baseline() (GAP-B08) |
+| Viés em peles escuras — PPG | threshold_multiplier ×1.4 para Fitzpatrick V-VI; ppg_equity_warning (GAP-B09) |
+| Acumulação de dataset biométrico no servidor | Zeragem pós-extração; endpoints GDPR erasure (GAP-A05) |
 | Hardware não confiável | Hierarquia de atestação L0-L3 (RFC 9334) |
 
 ### 7.2 Limitações reconhecidas (v2.0)

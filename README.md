@@ -7,8 +7,10 @@
 Unlike passwords, biometric templates, or digital signatures — which verify *who you are* — LICET verifies *that you are conscious, uncoerced, and cognitively capable* at the exact moment of authorization.
 
 **Live API:** [licet.dev/v1/](https://licet.dev/v1/)  
+**arXiv:** [cs.CR submit/7765569](https://arxiv.org/abs/submit/7765569) (submitted July 13, 2026 — cs.CR + cs.AI + cs.HC, CC BY)  
 **Preprint:** [SSRN 7018458](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7018458) (v2 updated July 2026)  
 **IETF Internet-Draft:** [draft-pereira-licet-human-intent-01](https://datatracker.ietf.org/doc/draft-pereira-licet-human-intent/) (submitted July 2, 2026)  
+**Security gap mitigations:** 11 gaps implemented in code — July 9, 2026  
 **Protocol timestamp:** Bitcoin blockchain via OpenTimestamps — February 25, 2026  
 
 ---
@@ -62,13 +64,18 @@ AI Agent requests action
 │  Fail:     D² > threshold for user baseline → DENIED   │
 └─────────────────────────────────────────────────────────┘
         ↓ (all layers pass)
+UI Binding check = SHA256(action ‖ agent_id ‖ target ‖ nonce) committed before capture
+        ↓ (ui_binding_status: VERIFIED | ABSENT | FAILED)
 Intent Hash  = SHA256(action ‖ agent_id ‖ target ‖ timestamp)
 Session key  = HKDF(master_key, intent_hash)
-Bio signature = HMAC(intent_hash ‖ biometrics, session_key)
+Bio signature = Ed25519(intent_hash ‖ biometrics, server_private_key)  — verifiable by third parties
+Witness      = HKDF(k_m, intent_hash)  — never stored in ledger
 ZKP (Schnorr/BN128) — proves valid biometrics without revealing them
-Ledger append = SHA256(entry ‖ prev_hash)   — tamper-evident chain
+server_nonce = secrets.token_hex(16) per entry  — prevents backdating
+Ledger append = SHA256(entry ‖ prev_hash ‖ server_nonce)  — tamper-evident chain
+Merkle root anchored to OpenTimestamps (3 calendars) — irretractable
         ↓
-AUTHORIZED ✓  — returns intent_hash + zkp_proof + ledger_id + trust_level
+AUTHORIZED ✓  — returns intent_hash + zkp_proof + ledger_id + trust_level + ui_binding_status
 ```
 
 ### Biometric Trust Levels (aligned with IETF RATS RFC 9334)
@@ -97,6 +104,13 @@ The LICET protocol is live at [licet.dev/v1/](https://licet.dev/v1/).
 | POST | `/v1/verify` | ZKP verification (for auditors) |
 | GET | `/v1/ledger/integrity` | Verify full ledger hash chain |
 | GET | `/v1/ledger/history` | Authorization event history |
+| GET | `/v1/signing-key` | Ed25519 public key for third-party auditors (GAP-C02) |
+| POST | `/v1/ledger/timestamp` | Anchor Merkle root to OpenTimestamps (GAP-C03) |
+| POST | `/v1/admin/key/split` | Shamir split of master key — n=5, threshold=3 (GAP-O02) |
+| POST | `/v1/admin/key/combine` | Shamir reconstruction — dev/recovery only (GAP-O02) |
+| POST | `/v1/admin/revoke/{ledger_id}` | Additive revocation of ledger entry (GAP-O03/H03) |
+| GET | `/v1/gdpr/data/{user_id}` | GDPR Art. 15 — right of access (GAP-A05) |
+| DELETE | `/v1/gdpr/erasure/{user_id}` | GDPR Art. 17 / LGPD Art. 18 VI — right to erasure (GAP-A05) |
 
 **Authorization response shape:**
 
@@ -110,6 +124,10 @@ The LICET protocol is live at [licet.dev/v1/](https://licet.dev/v1/).
   "layer1_ecg": "PASS",
   "layer2_eda": "PASS",
   "layer3_mahalanobis_d2": 1.43,
+  "biometric_signature": "<Ed25519 base64>",
+  "ui_binding_status": "VERIFIED",
+  "ui_binding_warning": null,
+  "ppg_equity_warning": null,
   "zkp_proof": { "commitment": {...}, "challenge": "0x...", "response": "0x..." },
   "ledger_id": 42,
   "timestamp": 1782490000.0
@@ -154,6 +172,35 @@ The LICET protocol is live at [licet.dev/v1/](https://licet.dev/v1/).
 | Ledger tampering | Hash chain — mathematically detectable |
 | Biometric exposure in audit | ZKP — proves validity without revealing raw data |
 | Session key compromise | HKDF per-event derivation — isolated per authorization |
+| Ledger backdating | `server_nonce = secrets.token_hex(16)` per entry — prevents retroactive rewrite (GAP-C04) |
+| Third-party auditability | Ed25519 asymmetric signature; public key at `GET /signing-key` — verifiable by auditors without server access (GAP-C02) |
+| Master key loss | Shamir Secret Sharing 5-of-3 over GF(2^256+297); `POST /admin/key/split` (GAP-O02) |
+| Device revocation | Additive revocation preserves hash chain; `POST /admin/revoke/{ledger_id}` (GAP-O03/H03) |
+| Agent tampering of action | UI binding commitment SHA256(action\|agent\_id\|target\|nonce) committed before biometric capture; `ui_binding_status` in response (GAP-A04) |
+| Skin tone bias in PPG | `threshold_multiplier = 1.4` for Fitzpatrick V–VI + PPG sensor; `ppg_equity_warning` in response (GAP-B09) |
+| Biometric data minimization | `ecg_waveform` and `rr_intervals` zeroed post-extraction when `privacy_mode=True`; GDPR/LGPD erasure endpoints (GAP-A05) |
+
+---
+
+## Security Gap Mitigations
+
+11 security gaps mitigated in code during sessions 07–09/07/2026:
+
+| Gap | Mitigation |
+| --- | --- |
+| GAP-C01 | ZKP witness = `HKDF(k_m, intent_hash)` — not derivable from ledger data |
+| GAP-C02 | Ed25519 replaces HMAC-SHA256; `GET /signing-key` for third-party verification |
+| GAP-C03 | Merkle root anchored via OpenTimestamps to 3 independent calendars |
+| GAP-C04 | Per-entry `server_nonce` prevents backdating and retroactive chain rewrite |
+| GAP-O02 | Shamir Secret Sharing (5,3) for `k_m`; split/combine admin endpoints |
+| GAP-O03/H03 | Additive revocation record appended to ledger — hash chain stays intact |
+| GAP-A04 | UI binding commitment before biometric capture; `ui_binding_status` in every response |
+| GAP-L05 | `medication_accommodation` flag; beta-blocker users not discriminated against |
+| GAP-B08 | 5-check baseline poisoning detection in `build_baseline()` |
+| GAP-B09 | Fitzpatrick V–VI threshold multiplier ×1.4 for PPG; equity warning in response |
+| GAP-A05 | Raw signal zeroing post-extraction; GDPR Art. 15/17 and LGPD Art. 18 VI endpoints |
+
+Full analysis: [`docs/research/security-gaps.md`](docs/research/security-gaps.md)
 
 ---
 
@@ -173,12 +220,16 @@ The LICET protocol is live at [licet.dev/v1/](https://licet.dev/v1/).
 If you use LICET in your research:
 
 ```text
-Pereira, C. R. (2026). LICET: A Biometric Intent Authorization Protocol
-for Autonomous AI Agents (v2). eColabs. SSRN 7018458.
-https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7018458
+Pereira, C. R. (2026). LICET: A Cryptographic Protocol for Multi-Modal
+Physiological Human-Intent Verification in Autonomous AI Agent Authorization.
+arXiv preprint, cs.CR, submit/7765569. July 2026.
+https://arxiv.org/abs/submit/7765569
 
 IETF Internet-Draft: draft-pereira-licet-human-intent-01 (July 2, 2026)
 https://datatracker.ietf.org/doc/draft-pereira-licet-human-intent/
+
+SSRN preprint: Abstract ID 7018458
+https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7018458
 ```
 
 ---
