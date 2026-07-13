@@ -7,7 +7,7 @@
 Unlike passwords, biometric templates, or digital signatures — which verify *who you are* — LICET verifies *that you are conscious, uncoerced, and cognitively capable* at the exact moment of authorization.
 
 **Live API:** [licet.dev/v1/](https://licet.dev/v1/)  
-**arXiv:** [cs.CR submit/7765569](https://arxiv.org/abs/submit/7765569) (submitted July 13, 2026 — cs.CR + cs.AI + cs.HC, CC BY)  
+**IACR ePrint:** [2026/110546](https://eprint.iacr.org/2026/110546) (submitted July 13, 2026 — Cryptographic Protocols, CC BY)  
 **Preprint:** [SSRN 7018458](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7018458) (v2 updated July 2026)  
 **IETF Internet-Draft:** [draft-pereira-licet-human-intent-01](https://datatracker.ietf.org/doc/draft-pereira-licet-human-intent/) (submitted July 2, 2026)  
 **Security gap mitigations:** 11 gaps implemented in code — July 9, 2026  
@@ -222,8 +222,8 @@ If you use LICET in your research:
 ```text
 Pereira, C. R. (2026). LICET: A Cryptographic Protocol for Multi-Modal
 Physiological Human-Intent Verification in Autonomous AI Agent Authorization.
-arXiv preprint, cs.CR, submit/7765569. July 2026.
-https://arxiv.org/abs/submit/7765569
+IACR Cryptology ePrint Archive, Report 2026/110546. July 2026.
+https://eprint.iacr.org/2026/110546
 
 IETF Internet-Draft: draft-pereira-licet-human-intent-01 (July 2, 2026)
 https://datatracker.ietf.org/doc/draft-pereira-licet-human-intent/
