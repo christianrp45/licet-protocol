@@ -23,6 +23,7 @@ cloudbuild.yaml
 CEO_PLAYBOOK.md
 MASTER_PLAN.md
 SECURITY_PROTOCOL.md
+SESSION_AUDIT_*.md
 docs/inpi/
 docs/anpd/
 docs/CEO_PLAYBOOK.pdf

@@ -2,14 +2,164 @@
 
 # LICET — Security Considerations: Análise Exaustiva de Gaps
 
-*Versão: 1.0 | Data: 2026-07-09 | Autor: Christian Rodrigues Pereira / NeuroTrust*
+*Versão: 1.1 | Data: 2026-07-26 | Autor: Christian Rodrigues Pereira / NeuroTrust*
 *Contexto: Documento de Security Considerations para o IETF draft-pereira-licet-human-intent*
-*Total de gaps identificados: 45 | Dimensões: 7*
+*Total de gaps identificados: 52 | Dimensões: 7*
+*Revisão 1.1 (26/07/2026): 7 novos gaps identificados via CryptoAudit (leitura formal do código com skill especializada — 6 domínios IACR/NIST/STRIDE). Dois críticos afetam produção imediatamente (CA-01, CA-02).*
 
 > **Nota sobre enquadramento:** O LICET deve ser consistentemente apresentado como
 > "elevador do custo de subversão" e "evidência técnica de estado fisiológico" —
 > jamais como "prova de intenção genuína" ou "detector de coerção".
 > Essa distinção semântica é o que torna o protocolo juridicamente defensável.
+
+---
+
+## Status de Implementação (09/07/2026)
+
+Os gaps abaixo foram mitigados em código nas sessões 07–09/07/2026.
+Pendente: revisão de auditoria externa, pen test formal, DPIA (GAP-L01).
+
+| Gap | Status | Data | Descrição curta |
+| --- | --- | --- | --- |
+| CA-01 | 🔴 ABERTO CRÍTICO | 26/07 | Admin endpoints sem autenticação — k_m exposto remotamente |
+| CA-02 | 🔴 ABERTO CRÍTICO | 26/07 | k_m retornado em plaintext HTTP em /admin/key/combine |
+| CA-03 | 🔴 ABERTO ALTO | 26/07 | Bypass do GAP-B01: rr_intervals omitidos → HMAC v1 → IP check pulado |
+| CA-04 | 🔴 ABERTO ALTO | 26/07 | eda_scl, eda_scr, skin_temp, tremor, user_id, fitzpatrick fora do HMAC |
+| CA-05 | 🔴 ABERTO ALTO | 26/07 | Sem rate limiting em nenhum endpoint |
+| CA-06 | 🟡 BAIXO | 26/07 | HKDF com salt=None — reduz extração de entropia com k_m fraco |
+| CA-07 | 🟡 MÉDIO | 26/07 | Float-to-string sem normalização no HMAC — risco de incompatibilidade Android |
+| C01 | ✅ IMPLEMENTADO | 09/07 | Witness `HKDF(k_m, intent_hash)` — não reproductível do ledger |
+| C02 | ✅ IMPLEMENTADO | 09/07 | Ed25519 assimétrico — auditável por terceiros; `GET /signing-key` |
+| C03 | ✅ IMPLEMENTADO | 09/07 | Merkle root + OpenTimestamps (3 calendários); `POST /ledger/timestamp` |
+| C04 | ✅ IMPLEMENTADO | 09/07 | `server_nonce = secrets.token_hex(16)` por entrada — impede reescrita retroativa |
+| O02 | ✅ IMPLEMENTADO | 09/07 | Shamir Secret Sharing (5,3) sobre GF(2^256+297); `POST /admin/key/split` e `/combine` |
+| O03/H03 | ✅ IMPLEMENTADO | 09/07 | Revogação aditiva (não quebra hash chain); `POST /admin/revoke/{ledger_id}` |
+| A04 | ✅ IMPLEMENTADO | 09/07 | Commitment SHA256(action\|agent_id\|target\|nonce); `ui_binding_status: VERIFIED/ABSENT/FAILED` |
+| L05 | ✅ IMPLEMENTADO | 09/07 | `medication_accommodation` flag; BETA_BLOCKER → BETA_BLOCKER_ACCOMMODATED quando ativado |
+| B08 | ✅ IMPLEMENTADO | 09/07 | 5-check assessment integrado ao `build_baseline()`: spread temporal, plausibilidade, CV, outliers, tendência |
+| B09 | ✅ IMPLEMENTADO | 09/07 | `threshold_multiplier = 1.4` para Fitzpatrick V-VI + PPG; `ppg_equity_warning` na resposta |
+| A05 | ✅ IMPLEMENTADO | 09/07 | Zeragem de `ecg_waveform` e `rr_intervals` pós-extração (privacy_mode); `GET /gdpr/data/{user_id}` e `DELETE /gdpr/erasure/{user_id}` |
+
+---
+
+---
+
+## DIMENSÃO CA — CRYPTOAUDIT 26/07/2026 (novos gaps — leitura formal do código)
+
+*Identificados via análise estrutural dos arquivos `api/routes.py` e `core/crypto.py` usando framework de 6 domínios (IACR / NIST SP 800-107 / ISO 24745 / STRIDE). Nenhum destes gaps estava documentado anteriormente.*
+
+---
+
+### GAP-CA-01 — Admin Endpoints sem Autenticação
+
+**Severidade:** CRÍTICA
+**Arquivo:** `api/routes.py:932–998`
+
+**Descrição:** `POST /admin/key/split` e `POST /admin/key/combine` não exigem nenhuma forma de autenticação — sem token, sem mTLS, sem `Depends()` do FastAPI. Qualquer requisição HTTP anônima com acesso de rede ao servidor pode chamar esses endpoints.
+
+**Vetor de ataque:** Adversário externo chama `POST /admin/key/split` → obtém os 5 shares Shamir de k_m em JSON. Com 3 shares (threshold), chama `POST /admin/key/combine` → reconstrói k_m completo. Pode então forjar qualquer `biometric_signature` e `ZKP proof` para qualquer `intent_hash`.
+
+**CVSS v3:** 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+
+**Mitigação:** Adicionar `LICET_ADMIN_TOKEN` como variável de ambiente e validar via `Depends(verify_admin_token)` em todos os endpoints `/admin/*`. Em produção, proteger com mTLS e VPC privada.
+
+**Prioridade:** IMEDIATA — afeta produção agora.
+
+---
+
+### GAP-CA-02 — Chave Mestra k_m Retornada em Plaintext HTTP
+
+**Severidade:** CRÍTICA
+**Arquivo:** `api/routes.py:997`
+
+**Descrição:** O endpoint `POST /admin/key/combine` inclui `"key_hex": reconstructed_hex` no response JSON. O comentário `# remover em produção — apenas para dev/DR` não foi executado antes do deploy em produção.
+
+**Vetor:** Combinado com CA-01 (sem autenticação), qualquer chamada ao endpoint retorna k_m em texto claro via HTTP. Comprometimento total e irreversível: todas as autorizações passadas podem ser forjadas retroativamente.
+
+**CVSS v3:** 10.0
+
+**Mitigação:** Remover a linha imediatamente. O response deve retornar apenas `key_fingerprint_sha256_prefix` para confirmação — nunca k_m.
+
+**Prioridade:** IMEDIATA — linha única a remover.
+
+---
+
+### GAP-CA-03 — Bypass do Bloqueio GAP-B01 via Supressão de rr_intervals
+
+**Severidade:** ALTA
+**Arquivo:** `api/routes.py:251–256` + `core/crypto.py:461–470`
+
+**Descrição:** O fallback HMAC v1 (sem rr_hash) é aceito pelo servidor quando `rr_intervals` está ausente no push. Quando `rr_intervals` é `None`, `compute_respiratory_periodicity([])` retorna `resp_index=None`. A condição de bloqueio `if resp_index is not None and resp_index >= 0.80` avalia `False` → bloqueio pulado.
+
+**Vetor:** Atacante treinado em paced breathing (0.1 Hz) simplesmente omite `rr_intervals` do push. HMAC v1 é aceito. IP check é ignorado. Mahalanobis avalia apenas RMSSD/SPO2, que paced breathing mantém próximo ao baseline → D²≈0 → `authorized=true`. A mitigação principal do GAP-B01 é anulada sem qualquer conhecimento criptográfico.
+
+**CVSS v3:** 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N)
+
+**Mitigação:** Tornar `rr_intervals` obrigatório para `source` != `"simulation"`. Rejeitar push sem `rr_intervals` de wearables reais com HTTP 422.
+
+**Prioridade:** ALTA — derrota a principal mitigação implementada em 26/07/2026.
+
+---
+
+### GAP-CA-04 — Seis Campos Críticos Fora do HMAC
+
+**Severidade:** ALTA
+**Arquivo:** `api/routes.py:248–256`
+
+**Descrição:** O HMAC v2 cobre apenas `source:heart_rate:spo2:hrv:int(start_timestamp):rr_hash`. Seis campos adicionais que influenciam diretamente a decisão de autorização não estão cobertos:
+
+| Campo | Influência |
+| ----- | ---------- |
+| `user_id` | Determina qual baseline é usado — o mais crítico |
+| `eda_scl` | Layer 2 EDA + check farmacológico |
+| `eda_scr` | Layer 2 EDA + check farmacológico |
+| `skin_temp` | Check farmacológico |
+| `tremor_8_12hz` | Mahalanobis Layer 3 |
+| `skin_tone_fitzpatrick` | `threshold_multiplier` ×1.4 |
+
+**Vetor mais grave:** Adversário intercepta push legítimo do usuário A com HMAC válido. Substitui `user_id` para usuário B (baseline mais permissivo, maturity=0). Mahalanobis sem baseline → status `NO_BASELINE` → threshold populacional genérico → D² passa. Adversário obtém autorização assinada como se fosse usuário B.
+
+**CVSS v3:** 7.1 (AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)
+
+**Mitigação:** Incluir todos os campos que influenciam a decisão no `sig_data`. Atualizar SDK Android simultaneamente para recalcular HMAC.
+
+---
+
+### GAP-CA-05 — Ausência de Rate Limiting
+
+**Severidade:** ALTA
+
+**Descrição:** Nenhum endpoint do protocolo tem rate limiting. Ataques possíveis:
+
+- **Baseline flooding:** submissão massiva de sessões de baseline → envenenamento do perfil biométrico do usuário
+- **Cache OOM:** `_biometric_push_cache` é um dict Python sem limite de tamanho; push em loop exaure memória do servidor → DoS
+- **API oracle:** black-box membership inference do classificador Mahalanobis sem custo via acesso irrestrito a `/authorize` (ver GAP-A02 — listado mas não implementado)
+
+**CVSS v3:** 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H)
+
+**Mitigação:** `slowapi` com limites por IP: 10 req/min em `/biometric/push`, 5 req/min em `/authorize`, 2 req/min em `/baseline/submit`. Adicionar `maxsize` ao cache de push_ids.
+
+---
+
+### GAP-CA-06 — HKDF com salt=None
+
+**Severidade:** BAIXA-MÉDIA
+**Arquivo:** `core/crypto.py:105–112`
+
+**Descrição:** `HKDF(salt=None)` usa salt de 32 bytes zero (comportamento da biblioteca `cryptography`). Quando o IKM (k_m) tem entropia alta (256 bits via `secrets.token_hex(32)`), o impacto é negligenciável. Porém se k_m for derivado de passphrase ou tiver entropia reduzida, a extração é sub-ótima.
+
+**Mitigação:** Adicionar `salt=os.urandom(32)` e registrar o salt junto ao ledger para reprodutibilidade de auditoria.
+
+---
+
+### GAP-CA-07 — Float-to-String sem Normalização no HMAC
+
+**Severidade:** MÉDIA (reliability, não segurança)
+**Arquivo:** `api/routes.py:248`
+
+**Descrição:** `heart_rate`, `spo2`, `hrv` são incluídos no `sig_data` como Python floats em f-string (`f"{heart_rate}"`). A representação pode divergir entre plataformas: Python escreve `33.9`, mas Kotlin/Java com `float` escreve `33.900001525878906` (single precision). Isso causa HMAC válido no Android rejeitado pelo servidor.
+
+**Mitigação:** Normalizar com precisão fixa: `f"{heart_rate:.1f}:{spo2:.1f}:{hrv:.1f}"` no servidor e `String.format("%.1f", value)` no Android.
 
 ---
 
@@ -560,19 +710,31 @@
 
 ## Hierarquia de Prioridade de Ação
 
-### Urgente (resolver antes de qualquer auditoria externa)
+### Implementados em código (07–09/07/2026)
+
+| Gap | Mitigação implementada |
+|---|---|
+| **GAP-C01** | Witness `HKDF(k_m, intent_hash)` — nunca armazenado no ledger |
+| **GAP-C02** | Ed25519 assimétrico; `GET /signing-key` para auditores |
+| **GAP-C03** | Merkle root + OpenTimestamps (3 calendários); `POST /ledger/timestamp` |
+| **GAP-C04** | `server_nonce = secrets.token_hex(16)` por entrada no hash chain |
+| **GAP-O02** | Shamir Secret Sharing (5,3) sobre GF(2^256+297); `POST /admin/key/split` e `/combine` |
+| **GAP-O03/H03** | Revogação aditiva; `POST /admin/revoke/{ledger_id}` |
+| **GAP-A04** | Commitment SHA256(action\|agent_id\|target\|nonce); `ui_binding_status` na resposta |
+| **GAP-L05** | `medication_accommodation` flag; BETA_BLOCKER → BETA_BLOCKER_ACCOMMODATED |
+| **GAP-B08** | 5-check assessment em `build_baseline()`: spread temporal, plausibilidade, CV, outliers, tendência |
+| **GAP-B09** | `threshold_multiplier = 1.4` para Fitzpatrick V-VI; `ppg_equity_warning` na resposta |
+| **GAP-A05** | Zeragem de `ecg_waveform`/`rr_intervals` pós-extração; `GET /gdpr/data/{user_id}`; `DELETE /gdpr/erasure/{user_id}` |
+
+### Urgente (pendente — resolver antes de qualquer auditoria externa)
 
 | Gap | Ação Imediata |
 |---|---|
-| **GAP-C01** | Redesign do ZKP — witness secreto genuíno usando `k_m` |
-| **GAP-C02** | Migrar "biometric signature" para Ed25519 com chave no HSM/TEE |
-| **GAP-O02** | HSM + Shamir Secret Sharing para `k_m` |
-| **GAP-A04** | UI binding criptográfico para o action descriptor |
 | **GAP-L01** | DPIA formal + base legal por jurisdição antes do primeiro cliente europeu |
 
-### Alto (afetam adoção em setores regulados)
+### Alto (afetam adoção em setores regulados — pendente)
 
-GAP-C03, GAP-C04, GAP-H03, GAP-O01, GAP-L04, GAP-L05, GAP-B09, GAP-B08, GAP-A05, GAP-O03
+GAP-O01, GAP-L04, GAP-O04, GAP-O06
 
 ### Estruturalmente insolúveis (re-enquadramento semântico, não técnico)
 
@@ -586,10 +748,10 @@ GAP-I01, GAP-I02, GAP-I03 — Declarar explicitamente em todos os documentos té
 
 | Gap | Título | Dimensão | Severidade | Mitigação Existe? |
 |---|---|---|---|---|
-| C01 | Witness ZKP computável publicamente | Criptografia | CRÍTICA | Sim (redesign) |
-| C02 | HMAC não é assinatura verificável | Criptografia | ALTA | Sim (EdDSA) |
-| C03 | Hash chain sem irretratabilidade | Criptografia | ALTA | Sim (âncora externa) |
-| C04 | Timestamp não verificável | Criptografia | MÉDIA-ALTA | Sim (RFC 3161) |
+| C01 | Witness ZKP computável publicamente | Criptografia | CRÍTICA | ✅ IMPLEMENTADO 09/07 — HKDF(k_m, intent_hash) |
+| C02 | HMAC não é assinatura verificável | Criptografia | ALTA | ✅ IMPLEMENTADO 09/07 — Ed25519 + GET /signing-key |
+| C03 | Hash chain sem irretratabilidade | Criptografia | ALTA | ✅ IMPLEMENTADO 09/07 — Merkle root + OpenTimestamps |
+| C04 | Timestamp não verificável | Criptografia | MÉDIA-ALTA | ✅ IMPLEMENTADO 09/07 — server_nonce por entrada |
 | C05 | Quantum threat em BN128 | Criptografia | MÉDIA | Sim (migração PQC/STARK) |
 | C06 | Replay via timestamp collision | Criptografia | BAIXA-MÉDIA | Sim (nonce) |
 | C07 | Side-channel na API pública | Criptografia | BAIXA | Sim (padding) |
@@ -600,27 +762,27 @@ GAP-I01, GAP-I02, GAP-I03 — Declarar explicitamente em todos os documentos té
 | B05 | Medicamentos legítimos = falso positivo | Saúde/Legal | ALTA | Parcial (whitelist) |
 | B06 | Morte/incapacitação durante sessão | Saúde | MÉDIA | Parcial |
 | B07 | Gêmeos idênticos e ECG | Biometria | BAIXA-MÉDIA | Sim (multi-fator) |
-| B08 | Baseline poisoning durante enrollment | Biometria | ALTA | Parcial |
-| B09 | PPG impreciso em peles escuras | Biometria/Equidade | ALTA | Sim (ECG obrigatório) |
+| B08 | Baseline poisoning durante enrollment | Biometria | ALTA | ✅ IMPLEMENTADO 09/07 — 5-check assessment em build_baseline() |
+| B09 | PPG impreciso em peles escuras | Biometria/Equidade | ALTA | ✅ IMPLEMENTADO 09/07 — threshold_multiplier ×1.4 Fitzpatrick V-VI |
 | H01 | TPM vulnerabilities documentadas | Hardware | ALTA | Sim (certificação) |
 | H02 | Supply chain: firmware wearable | Hardware | ALTA/CRÍTICA | Parcial (L3 spec) |
-| H03 | Clonagem de dispositivo sem revogação | Hardware | ALTA | Sim (CRL) |
+| H03 | Clonagem de dispositivo sem revogação | Hardware | ALTA | ✅ IMPLEMENTADO 09/07 — revogação aditiva POST /admin/revoke/{ledger_id} |
 | H04 | Side-channel no smartphone | Hardware | ALTA | Parcial (TEE nativo) |
 | H05 | Fault injection em wearables | Hardware | MÉDIA | Parcial |
 | L01 | GDPR: base legal para biometria na UE | Legal | CRÍTICA (UE) | Sim (DPIA) |
 | L02 | BIPA e retention de dados | Legal | ALTA (EUA) | Sim (política) |
 | L03 | Localização de dados por jurisdição | Legal | ALTA (global) | Sim (multi-região) |
 | L04 | Responsabilidade em falso negativo | Legal | ALTA | Parcial (ToS) |
-| L05 | Negação de acesso por medicação = discriminação | Legal | CRÍTICA (emprego) | Parcial |
+| L05 | Negação de acesso por medicação = discriminação | Legal | CRÍTICA (emprego) | ✅ IMPLEMENTADO 09/07 — medication_accommodation flag; BETA_BLOCKER_ACCOMMODATED |
 | L06 | Competência fisiológica ≠ capacidade legal | Legal | MÉDIA | Sim (clarificação) |
 | A01 | LLMs geram conteúdo, humano apenas assina | IA | CRÍTICA | Não (design change) |
 | A02 | Ataques adversariais na API pública | IA | ALTA | Parcial |
 | A03 | Co-authorship humano+IA sem granularidade | IA | ALTA | Não |
-| A04 | Agente AI manipula action descriptor | IA | CRÍTICA | Sim (UI binding) |
-| A05 | Servidor LICET como dataset biométrico | IA | ALTA | Sim (processamento local) |
+| A04 | Agente AI manipula action descriptor | IA | CRÍTICA | ✅ IMPLEMENTADO 09/07 — commitment SHA256 + ui_binding_status na resposta |
+| A05 | Servidor LICET como dataset biométrico | IA | ALTA | ✅ IMPLEMENTADO 09/07 — zeragem pós-extração + GDPR erasure endpoints |
 | O01 | Revogação de credenciais não especificada | Operacional | ALTA | Sim (CRL) |
-| O02 | Perda de k_m: catástrofe sem recovery | Operacional | CRÍTICA | Sim (HSM + SSS) |
-| O03 | Single point of failure centralizado | Operacional | ALTA | Sim (multi-region) |
+| O02 | Perda de k_m: catástrofe sem recovery | Operacional | CRÍTICA | ✅ IMPLEMENTADO 09/07 — Shamir (5,3) GF(2^256+297); POST /admin/key/split e /combine |
+| O03 | Single point of failure centralizado | Operacional | ALTA | ✅ IMPLEMENTADO (revogação) 09/07 — POST /admin/revoke; multi-region pendente |
 | O04 | Baseline expiry sem continuidade | Operacional | ALTA | Sim (rolling update) |
 | O05 | Múltiplos dispositivos sem portabilidade | Operacional | MÉDIA | Sim (normalização) |
 | O06 | Auditoria de terceiros incompleta | Operacional | ALTA | Sim (CT log externo) |
@@ -632,8 +794,16 @@ GAP-I01, GAP-I02, GAP-I03 — Declarar explicitamente em todos os documentos té
 | I06 | ZKP indistinguível com adversário quântico | Estrutural | INSOLÚVEL com BN128 | Sim (STARKs) |
 | I07 | Continuidade de identidade ao longo do tempo | Estrutural | MÉDIA / PARCIAL | Parcial |
 | I08 | Estados alterados voluntários vs. incapacidade | Estrutural | ALTA / PARCIAL | Parcial |
+| CA-01 | Admin endpoints sem autenticação | Criptografia/Operacional | CRÍTICA | Sim (LICET_ADMIN_TOKEN + Depends) |
+| CA-02 | k_m retornado em plaintext HTTP | Criptografia/Operacional | CRÍTICA | Sim (remover linha routes.py:997) |
+| CA-03 | Bypass GAP-B01 via supressão rr_intervals | Biometria/Criptografia | ALTA | Sim (rr_intervals obrigatório) |
+| CA-04 | Seis campos críticos fora do HMAC | Criptografia | ALTA | Sim (ampliar sig_data) |
+| CA-05 | Sem rate limiting em nenhum endpoint | Operacional | ALTA | Sim (slowapi) |
+| CA-06 | HKDF com salt=None | Criptografia | BAIXA-MÉDIA | Sim (salt=os.urandom(32)) |
+| CA-07 | Float-to-string sem normalização no HMAC | Implementação | MÉDIA | Sim (:.1f em ambos os lados) |
 
 ---
 
 *Este documento deve ser incorporado à seção "Security Considerations" do IETF draft-pereira-licet-human-intent.*
 *Revisão recomendada: a cada versão major do protocolo ou quando gaps estruturalmente insolúveis evoluírem com novas evidências científicas.*
+*Revisão 1.1 (26/07/2026): 7 novos gaps (CA-01 a CA-07) identificados via auditoria formal do código com framework CryptoAudit (6 domínios: primitivas, cobertura HMAC, ZKP, STRIDE, biométrico, side-channels). Dois críticos (CA-01, CA-02) afetam produção imediatamente.*
