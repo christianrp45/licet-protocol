@@ -10,10 +10,15 @@ Tabelas:
   user_baselines    — baseline individual de cada usuário (≥5 sessões)
   biometric_history — histórico de sessões de calibração (30 dias, purge automático)
 
-Suporta SQLite (desenvolvimento) e PostgreSQL (produção).
+Suporta SQLite (desenvolvimento) e PostgreSQL/Cloud SQL (produção).
 Configurar via DATABASE_URL:
-  SQLite:     sqlite:///licet_ledger.db   (padrão)
-  PostgreSQL: postgresql://user:pass@host/dbname
+  SQLite:         sqlite:///licet_ledger.db                          (padrão local)
+  Cloud SQL:      postgresql+psycopg2://USER:PASS@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE
+  PostgreSQL:     postgresql+psycopg2://user:pass@host/dbname        (dev remoto)
+
+Em Cloud Run, configure DATABASE_URL via Secret Manager (licet-db-url:latest).
+NullPool é usado automaticamente quando K_SERVICE está definido (Cloud Run), evitando
+conexões penduradas quando a instância escala para zero.
 """
 
 import hashlib
@@ -25,7 +30,7 @@ from sqlalchemy import (
     create_engine, text, Column, Integer, Float, Boolean,
     String, Text, MetaData, Table
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import StaticPool, NullPool
 
 from core.crypto import AuthorizationBundle
 
@@ -34,14 +39,25 @@ from core.crypto import AuthorizationBundle
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///licet_ledger.db")
 
-if DATABASE_URL.startswith("sqlite"):
+# K_SERVICE é injetado pelo Cloud Run em tempo de execução.
+# Usamos NullPool em serverless: cada request abre e fecha sua conexão,
+# evitando conexões penduradas quando a instância hiberna (scale-to-zero).
+_IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
+_IS_SQLITE    = DATABASE_URL.startswith("sqlite")
+
+if _IS_SQLITE:
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+elif _IS_CLOUD_RUN:
+    # Cloud Run + Cloud SQL via Unix socket (Cloud SQL Auth Proxy automático).
+    # NullPool: sem pool persistente — correto para serverless scale-to-zero.
+    engine = create_engine(DATABASE_URL, poolclass=NullPool)
 else:
-    engine = create_engine(DATABASE_URL)
+    # PostgreSQL local/dev: pool padrão com pre-ping para detectar conexões mortas.
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10)
 
 metadata = MetaData()
 

@@ -1,0 +1,45 @@
+steps:
+  # 1. Build da imagem Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/licet:latest
+      - .
+
+  # 2. Push para Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/licet:latest
+
+  # 3. Deploy no Cloud Run com Cloud SQL + Secret Manager
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - licet
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/licet:latest
+      - --region=us-central1
+      - --platform=managed
+      - --allow-unauthenticated
+      # Cloud SQL Auth Proxy: injeta socket Unix em /cloudsql/PROJECT:REGION:INSTANCE
+      # A connection string usa ?host=/cloudsql/... (sem IP exposto)
+      - --add-cloudsql-instances=$PROJECT_ID:us-central1:licet-db
+      # DATABASE_URL vem do Secret Manager — nunca hardcoded aqui
+      # Formato do secret: postgresql+psycopg2://licet:PASS@/licet_prod?host=/cloudsql/PROJECT:us-central1:licet-db
+      - --set-secrets=DATABASE_URL=licet-db-url:latest
+      # Token de admin do LICET (CA-01)
+      - --set-secrets=LICET_ADMIN_TOKEN=licet-admin-token:latest
+      # Chave mestre (k_m) — derivada via Shamir em produção
+      - --set-secrets=LICET_MASTER_KEY=licet-master-key:latest
+      # Recursos mínimos para Cloud Run (ajustar conforme carga)
+      - --memory=512Mi
+      - --cpu=1
+      - --min-instances=0
+      - --max-instances=10
+      - --concurrency=80
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/licet:latest'
