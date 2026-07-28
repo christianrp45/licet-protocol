@@ -78,22 +78,44 @@ Ledger Imutável (Cloud SQL PostgreSQL)
 | Campo | Valor |
 |-------|-------|
 | `authorized` | **true** |
-| `trust_level` | L0 (baseline em calibração) |
+| `trust_level` | L0 (último resultado) |
+| `max_authorization_level` | **L2** (maturity 60/100 habilita até L2) |
 | `respiratory_periodicity_index` | **0.375** |
 | `respiratory_periodicity_warning` | Baixa — sem risco de paced breathing |
 | `layer3_mahalanobis_d2` | 0.13 |
 | `layer3_mahalanobis_status` | **NO_BASELINE** |
 | `coercion_risk` | **LOW** |
 | `cognitive_state` | **NORMAL** |
+| `forgery_cost` | **LOW** |
 | `ledger_id` | **8** |
 | `hardware_source` | `health_connect` |
+
+### Histórico de autorizações visível no app
+
+| Ledger | Status | Hash (prefixo) |
+|--------|--------|----------------|
+| #8 | **OK** | `890dfa4709161020f1d04f24…` |
+| #7 | NEGADO | `1f0f84016aace6ea8c2bd133…` |
+| #6 | NEGADO | `46c890821d0d7521fe74f12b…` |
+| #5 | NEGADO | *(parcialmente visível)* |
+
+Ledgers #5–#7 negados correspondem às tentativas anteriores ao fix do HMAC Locale.US
+e à concessão das permissões do Health Connect.
+
+### Bug de UI identificado
+
+O campo `action` aparece como `null` na lista "Últimas Autorizações" (ex: "#8 — null").
+O `action` é enviado corretamente à API (`"teste_real_watch6"`), mas não está sendo
+retornado no response de `GET /ledger/history` ou não está sendo exibido pelo app.
+**A corrigir:** verificar se `LedgerRecord` expõe o campo `action` e exibi-lo na lista.
 
 ### Interpretação
 
 - **IP=0.375** — bem abaixo do threshold de bloqueio (0.80). Respiração natural, sem periodicidade suspeita.
-- **D²=0.13 / NO_BASELINE** — baseline ainda em calibração (maturity ~60/100). D² calculado mas com dados insuficientes para status NORMAL/ANOMALY.
-- **Trust Level L0** — esperado para usuário novo. Sobe com mais sessões ao longo de dias distintos.
+- **D²=0.13 / NO_BASELINE** — baseline em calibração (maturity 60/100). D² calculado mas dados insuficientes para status definitivo.
+- **Trust Level L0** — resultado da última autorização. Nível máximo disponível é L2.
 - **coercion_risk=LOW** — nenhum sinal de estresse ou coerção nos dados fisiológicos.
+- **forgery_cost=LOW** — sem ECG raw e EDA contínua (limitação da Opção B via Health Connect).
 - **AUTORIZADO** — protocolo funcionando com biometria de hardware real.
 
 ---
