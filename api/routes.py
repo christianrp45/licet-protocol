@@ -243,6 +243,8 @@ def _load_baseline_params(user_id: Optional[str]) -> dict:
         "baseline_tremor_std":        baseline.tremor_std,
         # Flag interno — extraído antes de passar para authorize()
         "_chronic_beta_blocker_flag": baseline.chronic_beta_blocker_flag,
+        # Threshold IP individual (mean+2σ) — None usa o global 0.80
+        "baseline_ip_threshold": baseline.ip_threshold,
     }
 
 
@@ -658,10 +660,11 @@ def baseline_submit(req: BaselineSubmitRequest):
     if session_meta["user_id"] != req.user_id:
         raise HTTPException(status_code=403, detail="user_id não corresponde ao token.")
 
-    # Análise espectral dos RR intervals — popula HF power e peak_freq para o baseline
+    # Análise espectral dos RR intervals — popula HF power, peak_freq e IP para o baseline
     _resp = compute_respiratory_periodicity(req.rr_intervals or [])
-    _hf_power  = _resp.hf_power_ms2   if _resp.assessed else None
-    _peak_freq = _resp.dominant_freq_hz if _resp.assessed else None
+    _hf_power  = _resp.hf_power_ms2      if _resp.assessed else None
+    _peak_freq = _resp.dominant_freq_hz   if _resp.assessed else None
+    _ip        = _resp.periodicity_index  if _resp.assessed else None
 
     # Criar sessão de baseline
     session = BaselineSession(
@@ -678,6 +681,7 @@ def baseline_submit(req: BaselineSubmitRequest):
         on_chronic_beta_blocker=bool(req.on_chronic_beta_blocker),
         hf_power_ms2=_hf_power,
         peak_freq_hz=_peak_freq,
+        periodicity_index=_ip,
     )
 
     # Verificar pré-medicação

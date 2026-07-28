@@ -343,6 +343,9 @@ def authorize(
     # Quando True, padrão BETA_BLOCKER não gera denial — gera "BETA_BLOCKER_ACCOMMODATED".
     # Definido pelo caller (api/routes.py) com base em baseline.chronic_beta_blocker_flag.
     medication_accommodation: bool = False,
+    # Threshold IP individual — mean+2σ do baseline do usuário.
+    # None → usa o global 0.80. Reduz falsos positivos para usuários naturalmente rítmicos.
+    baseline_ip_threshold: Optional[float] = None,
 ) -> AuthorizationBundle:
     """
     Pipeline completo de autorização LICET v2.
@@ -476,11 +479,17 @@ def authorize(
     # IP ≥ 0.80 → bloqueio automático (GAP-B01 mitigado).
     # Paced breathing treinado a ~0.1 Hz produz IP ≥ 0.80 com pico espectral concentrado.
     # Repouso genuíno: IP típico < 0.60, broadband.
-    resp_result = compute_respiratory_periodicity(reading.rr_intervals or [])
+    # Threshold IP: individual (mean+2σ do baseline) ou global 0.80
+    _ip_threshold = baseline_ip_threshold if baseline_ip_threshold is not None else 0.80
+    resp_result = compute_respiratory_periodicity(
+        reading.rr_intervals or [],
+        suspect_threshold_high=_ip_threshold,
+        suspect_threshold_med=max(0.60, _ip_threshold - 0.20),
+    )
     resp_index   = resp_result.periodicity_index
     resp_warning = resp_result.reason if resp_result.is_suspicious else None
 
-    if resp_index is not None and resp_index >= 0.80:
+    if resp_index is not None and resp_index >= _ip_threshold:
         return _deny(
             f"PACED_BREATHING_DETECTED_IP={resp_index:.2f}",
             _empty_ecg(), _empty_eda(), _empty_pharma(), _empty_maha(),
