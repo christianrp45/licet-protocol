@@ -14,13 +14,14 @@ Endpoints de baseline:
 
 import time
 import os
+import json
 import random
 import secrets as sec
 import hmac as hmac_lib
 import hashlib
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from core.crypto import authorize, load_secret_key, load_signing_key, get_signing_public_key_b64
@@ -41,6 +42,23 @@ from core.respiratory_periodicity import compute_respiratory_periodicity
 
 
 router = APIRouter()
+
+
+# ── Auth — Admin (CA-01) ──────────────────────────────────────────────────────
+
+def verify_admin_token(x_admin_token: str = Header(...)) -> None:
+    """
+    Dependency que valida o token de administrador para endpoints /admin/*.
+    Requer header: X-Admin-Token: <valor de LICET_ADMIN_TOKEN>
+    """
+    expected = os.getenv("LICET_ADMIN_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Serviço não configurado: LICET_ADMIN_TOKEN ausente no servidor."
+        )
+    if not hmac_lib.compare_digest(expected, x_admin_token):
+        raise HTTPException(status_code=403, detail="Token de administração inválido.")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -228,21 +246,72 @@ def _load_baseline_params(user_id: Optional[str]) -> dict:
     }
 
 
-def _verify_mobile_hmac(req_source: str, heart_rate: float, spo2: float,
-                         hrv: float, start_timestamp: float, hmac_sig: str) -> None:
-    """Valida HMAC do app móvel. Lança HTTPException 401 se inválido."""
+def _verify_mobile_hmac(
+    req_source: str,
+    heart_rate: float,
+    spo2: float,
+    hrv: float,
+    start_timestamp: float,
+    hmac_sig: str,
+    rr_intervals: Optional[List[float]] = None,
+    user_id: Optional[str] = None,
+    eda_scl: Optional[float] = None,
+    eda_scr: Optional[float] = None,
+    skin_temp: Optional[float] = None,
+    tremor_8_12hz: Optional[float] = None,
+    skin_tone_fitzpatrick: Optional[int] = None,
+) -> None:
+    """Valida HMAC do app móvel. Lança HTTPException 401 se inválido.
+
+    sig_data (v3 — CA-04): cobre todos os campos que influenciam autorização.
+    Formato: '{source}:{hr:.1f}:{spo2:.1f}:{hrv:.1f}:{ts}:{rr_hash}:
+              {user_id}:{eda_scl}:{eda_scr}:{skin_temp}:{tremor}:{skin_tone}'
+
+    Compatibilidade retroativa: tenta v3 → v2 (com rr_hash) → v1 (legado).
+    """
     app_secret = os.getenv("LICET_MOBILE_APP_SECRET")
     if not app_secret:
         raise HTTPException(
             status_code=503,
             detail="Serviço não configurado: LICET_MOBILE_APP_SECRET ausente."
         )
-    sig_data = f"{req_source}:{heart_rate}:{spo2}:{hrv}:{int(start_timestamp)}"
-    expected = hmac_lib.new(
-        app_secret.encode(), sig_data.encode(), hashlib.sha256
-    ).hexdigest()
-    if not hmac_lib.compare_digest(expected, hmac_sig):
-        raise HTTPException(status_code=401, detail="Assinatura do app inválida.")
+
+    def _f(val: Optional[float], fmt: str) -> str:
+        return fmt.format(val) if val is not None else "none"
+
+    ts = int(start_timestamp)
+
+    # rr_hash — presente em v2 e v3
+    if rr_intervals:
+        rr_json = json.dumps(rr_intervals, separators=(",", ":"))
+        rr_hash = hashlib.sha256(rr_json.encode()).hexdigest()
+    else:
+        rr_hash = "none"
+
+    # v3 — CA-04: cobre user_id, EDA, skin_temp, tremor, skin_tone (CA-07: floats com :.1f)
+    sig_v3 = (
+        f"{req_source}:{heart_rate:.1f}:{spo2:.1f}:{hrv:.1f}:{ts}:{rr_hash}"
+        f":{user_id or 'none'}"
+        f":{_f(eda_scl, '{:.1f}')}"
+        f":{_f(eda_scr, '{:.3f}')}"
+        f":{_f(skin_temp, '{:.1f}')}"
+        f":{_f(tremor_8_12hz, '{:.3f}')}"
+        f":{skin_tone_fitzpatrick if skin_tone_fitzpatrick is not None else 'none'}"
+    )
+
+    # v2 — com rr_hash mas sem campos opcionais
+    sig_v2 = f"{req_source}:{heart_rate:.1f}:{spo2:.1f}:{hrv:.1f}:{ts}:{rr_hash}"
+
+    # v1 — legado: sem rr_hash (retrocompatibilidade com apps antigos)
+    sig_v1 = f"{req_source}:{heart_rate}:{spo2}:{hrv}:{ts}"
+
+    secret = app_secret.encode()
+    for sig_data in (sig_v3, sig_v2, sig_v1):
+        expected = hmac_lib.new(secret, sig_data.encode(), hashlib.sha256).hexdigest()
+        if hmac_lib.compare_digest(expected, hmac_sig):
+            return
+
+    raise HTTPException(status_code=401, detail="Assinatura do app inválida.")
 
 
 def _check_pre_medication(session: BaselineSession) -> BaselineSession:
@@ -376,8 +445,27 @@ def receive_biometric_push(req: BiometricPushRequest):
     Retorna um push_id válido por 60 segundos para uso em /authorize/from-push.
     Aceita sinais avançados opcionais: eda_scl, eda_scr, skin_temp, tremor_8_12hz.
     """
-    _verify_mobile_hmac(req.source, req.heart_rate, req.spo2,
-                        req.hrv, req.start_timestamp, req.hmac_signature)
+    # CA-03: rr_intervals obrigatório para hardware real
+    if req.source != "simulation" and not req.rr_intervals:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "rr_intervals é obrigatório para source != 'simulation'. "
+                "Inclua ≥60 amostras (≈60s) para análise espectral confiável."
+            ),
+        )
+
+    _verify_mobile_hmac(
+        req.source, req.heart_rate, req.spo2, req.hrv, req.start_timestamp,
+        req.hmac_signature,
+        rr_intervals=req.rr_intervals,
+        user_id=req.user_id,
+        eda_scl=req.eda_scl,
+        eda_scr=req.eda_scr,
+        skin_temp=req.skin_temp,
+        tremor_8_12hz=req.tremor_8_12hz,
+        skin_tone_fitzpatrick=req.skin_tone_fitzpatrick,
+    )
 
     push_id = sec.token_hex(16)
     _biometric_push_cache[push_id] = {
@@ -906,7 +994,7 @@ class KeyCombineRequest(BaseModel):
 
 
 @router.post("/admin/key/split")
-def admin_key_split(req: KeySplitRequest):
+def admin_key_split(req: KeySplitRequest, _: None = Depends(verify_admin_token)):
     """
     GAP-O02: Divide k_m em n shares com threshold mínimo para reconstrução.
 
@@ -947,7 +1035,7 @@ def admin_key_split(req: KeySplitRequest):
 
 
 @router.post("/admin/key/combine")
-def admin_key_combine(req: KeyCombineRequest):
+def admin_key_combine(req: KeyCombineRequest, _: None = Depends(verify_admin_token)):
     """
     GAP-O02: Reconstrói k_m a partir de shares Shamir (quórum de threshold shares).
 
@@ -961,16 +1049,16 @@ def admin_key_combine(req: KeyCombineRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Reconstrução falhou: {e}")
 
-    # Nunca retornar a chave em texto plano em produção — aqui só hash para confirmação
+    # CA-02: nunca retornar a chave em texto plano. Apenas fingerprint para confirmação.
+    # Em disaster recovery, injetar k_m diretamente no HSM via canal seguro fora de banda.
     key_fingerprint = hashlib.sha256(bytes.fromhex(reconstructed_hex)).hexdigest()[:16]
     return {
         "reconstructed": True,
         "key_fingerprint_sha256_prefix": key_fingerprint,
         "warning": (
-            "Em produção, injetar a chave diretamente no HSM, não retornar em HTTP. "
-            "Este endpoint expõe material de chave — proteger com mTLS e auditoria."
+            "Chave reconstruída em memória. Injetar diretamente no HSM via canal "
+            "seguro fora de banda — nunca via HTTP. Proteger com mTLS e auditoria."
         ),
-        "key_hex": reconstructed_hex,   # remover em produção — apenas para dev/DR
     }
 
 
@@ -1002,7 +1090,7 @@ def ledger_timestamp():
 
 
 @router.post("/admin/revoke/{ledger_id}")
-def admin_revoke_entry(ledger_id: int, req: RevokeRequest):
+def admin_revoke_entry(ledger_id: int, req: RevokeRequest, _: None = Depends(verify_admin_token)):
     """
     GAP-O03 / GAP-H03: Revoga uma entrada do ledger.
 
