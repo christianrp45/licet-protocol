@@ -151,6 +151,10 @@ user_baselines = Table(
     # Template ECG (opcional — None se sem hardware ECG)
     Column("ecg_template",              Text),    # JSON: [float, ...] | None
     Column("chronic_beta_blocker_flag", Boolean, default=False),
+    # Threshold IP individual — mean+2σ das sessões de baseline
+    Column("ip_mean",                   Float),
+    Column("ip_std",                    Float),
+    Column("ip_threshold",              Float),
 )
 
 
@@ -174,6 +178,7 @@ biometric_history = Table(
     Column("on_chronic_beta_blocker",   Boolean, default=False),
     Column("hf_power_ms2",              Float),
     Column("peak_freq_hz",              Float),
+    Column("periodicity_index",         Float),
 )
 
 
@@ -203,6 +208,11 @@ def _migrate_columns():
         ("authorizations",    "revoked_at",                "REAL"),
         # CA-09: hash do payload assinado para auditoria Ed25519
         ("authorizations",    "bio_payload_hash",          "TEXT"),
+        # Threshold IP individual (mean+2σ do baseline por usuário)
+        ("biometric_history", "periodicity_index",         "REAL"),
+        ("user_baselines",    "ip_mean",                   "REAL"),
+        ("user_baselines",    "ip_std",                    "REAL"),
+        ("user_baselines",    "ip_threshold",              "REAL"),
     ]
     with engine.begin() as conn:
         for table, column, coldef in migrations:
