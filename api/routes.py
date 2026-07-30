@@ -313,6 +313,25 @@ def _verify_mobile_hmac(
         if hmac_lib.compare_digest(expected, hmac_sig):
             return
 
+    # DEBUG — remove após resolver 401 persistente
+    rr_json_debug = json.dumps(rr_intervals, separators=(",", ":")) if rr_intervals else "none"
+    _exp_v3 = hmac_lib.new(secret, sig_v3.encode(), hashlib.sha256).hexdigest()
+    _exp_v2 = hmac_lib.new(secret, sig_v2.encode(), hashlib.sha256).hexdigest()
+    _exp_v1 = hmac_lib.new(secret, sig_v1.encode(), hashlib.sha256).hexdigest()
+    print(
+        f"[LICET 401 DEBUG] "
+        f"source={req_source} ts={ts} "
+        f"hr={heart_rate:.1f} spo2={spo2:.1f} hrv={hrv:.1f} "
+        f"user_id={user_id} "
+        f"rr_count={len(rr_intervals) if rr_intervals else 0} "
+        f"rr_hash={rr_hash} "
+        f"rr_json_first80={rr_json_debug[:80]} "
+        f"hmac_received={hmac_sig[:16]} "
+        f"secret_preview={app_secret[:16]} (len={len(app_secret)}) "
+        f"exp_v3={_exp_v3[:16]} exp_v2={_exp_v2[:16]} exp_v1={_exp_v1[:16]} "
+        f"sig_v2={sig_v2}",
+        flush=True,
+    )
     raise HTTPException(status_code=401, detail="Assinatura do app inválida.")
 
 

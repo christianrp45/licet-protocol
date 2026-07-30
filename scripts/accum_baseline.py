@@ -25,14 +25,14 @@ except ImportError:
     print("Instale requests: pip install requests")
     sys.exit(1)
 
-BASE_URL = "https://licet-1098140578579.southamerica-east1.run.app/v1"
+BASE_URL = "https://licet.dev/v1"
 
 # ── Perfil biométrico do usuário (calibrado nos valores reais do Watch 6) ──────
 PROFILE = {
-    "hr_mean":       79.0,   # BPM — FC em repouso
-    "hr_std":         4.0,
-    "hrv_mean":      38.0,   # ms RMSSD — média entre Ledger #8 (45ms) e #14 (33ms)
-    "hrv_std":        6.0,
+    "hr_mean":       70.0,   # BPM — média real: L#8=64, hoje=67-69, L#14=79
+    "hr_std":         6.0,   # cobre range 64-79 BPM observado
+    "hrv_mean":      20.0,   # ms RMSSD — path samsung_watch (TYPE_HEART_RATE derivado): 11-23ms
+    "hrv_std":        6.0,   # cobre range 11-23ms + margem
     "spo2_mean":     98.0,   # %
     "spo2_std":       0.3,
     "eda_scl_mean":   3.8,   # µS — sem sensor real, valor típico de repouso
