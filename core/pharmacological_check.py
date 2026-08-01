@@ -187,8 +187,12 @@ def check_pharmacological_interference(
         ac_score += 1   # EDA SCR suprimida — corrobora bloqueio colinérgico
     if skin_temp is not None and skin_temp > 37.5:
         ac_score += 1   # pele quente e seca (toxidrome clássica)
-    if z_hrv is not None and z_hrv < -2.0:
-        ac_score += 2   # RMSSD abolido — bloqueio vagal M₂
+    # RMSSD abolido — bloqueio vagal M₂.
+    # Requer sensor EDA presente: sem EDA, HRV baixo pode refletir variação fisiológica
+    # normal (ex: Watch 6 sem sensor EDA). Sem corroboração dérmica, z_hrv sozinho
+    # não constitui evidência suficiente para bloqueio colinérgico.
+    if eda_scl is not None and z_hrv is not None and z_hrv < -2.0:
+        ac_score += 2   # RMSSD abolido confirmado com sensor EDA disponível
 
     # Tríade clássica autoincriminante: EDA plana + RMSSD abolido + taquicardia
     if (eda_scl is not None and eda_scl < 0.05

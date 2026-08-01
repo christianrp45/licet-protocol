@@ -424,6 +424,25 @@ def build_baseline(
     p   = len(labels)
     mu  = [_mean([obs[j] for obs in observations]) for j in range(p)]
     cov = _cov_matrix(observations)
+
+    # Floor mínimo de variância diagonal por sinal — evita sigma_inv zerado
+    # quando poucas sessões produzem variância degenerada (ex: SpO₂=98 em todas).
+    # Valores calibrados na resolução do sensor: SpO₂ PPG ±0.5%, RMSSD ±2ms.
+    _MIN_VAR: dict = {
+        "RMSSD":          4.0,    # std mínimo = 2 ms (resolução PPG derivada)
+        "SPO2":           0.25,   # std mínimo = 0.5 % (resolução PPG ±0.5%)
+        "EDA_SCL":        0.01,   # std mínimo = 0.1 µS
+        "EDA_SCR":        0.001,
+        "SKIN_TEMP":      0.04,   # std mínimo = 0.2 °C
+        "TREMOR_8_12HZ":  1e-6,
+        "HF_POWER_MS2":   1.0,
+        "PEAK_FREQ_HZ":   0.0001,
+    }
+    for i, lbl in enumerate(labels):
+        floor = _MIN_VAR.get(lbl, 1e-4)
+        if cov[i][i] < floor:
+            cov[i][i] = floor
+
     sigma_inv = _safe_invert(cov)
 
     # ── Parâmetros para check farmacológico ──────────────────────────────────

@@ -28,17 +28,20 @@ except ImportError:
 BASE_URL = "https://licet.dev/v1"
 
 # ── Perfil biométrico do usuário (calibrado nos valores reais do Watch 6) ──────
+# Atualizado com dados observados: L#37 (D²=1.64), L#42 (HRV=45ms, D²=5.60)
+# Range HRV real: 11–45ms (TYPE_HEART_RATE derivado via Health Connect)
+# Recomendação: prefer recalibração real via Settings → "Recalibrar com Watch 6"
 PROFILE = {
-    "hr_mean":       70.0,   # BPM — média real: L#8=64, hoje=67-69, L#14=79
-    "hr_std":         6.0,   # cobre range 64-79 BPM observado
-    "hrv_mean":      20.0,   # ms RMSSD — path samsung_watch (TYPE_HEART_RATE derivado): 11-23ms
-    "hrv_std":        6.0,   # cobre range 11-23ms + margem
-    "spo2_mean":     98.0,   # %
-    "spo2_std":       0.3,
-    "eda_scl_mean":   3.8,   # µS — sem sensor real, valor típico de repouso
-    "eda_scl_std":    0.4,
+    "hr_mean":       70.0,   # BPM — range observado: 64-79 BPM
+    "hr_std":         8.0,   # std ampliado para cobrir variação diária
+    "hrv_mean":      30.0,   # ms RMSSD — centro do range real 11-45ms (L#42=45ms)
+    "hrv_std":       12.0,   # cobre range 11-45ms com ±2σ = 6-54ms
+    "spo2_mean":     98.0,   # % — consistente entre testes
+    "spo2_std":       0.5,   # std ampliado — Watch 6 PPG tem variação de ±0.5%
+    "eda_scl_mean":   3.8,   # µS — sem sensor EDA no Watch 6, valor típico de repouso
+    "eda_scl_std":    0.6,   # std ampliado — variação inter-sessão maior sem sensor real
     "skin_temp_mean": 33.5,  # °C
-    "skin_temp_std":   0.3,
+    "skin_temp_std":   0.4,
     "tremor_mean":   0.004,
     "tremor_std":    0.001,
 }
