@@ -175,6 +175,42 @@ ou qualquer questão aberta sobre "como X funciona" no repositório.
 - Ed25519 → ML-DSA-44: migração com período híbrido, não implementar unilateralmente
 - OPRF para anti-clone V4: arquitetura nova, não é uma "melhoria" simples
 
+### 4. Parâmetros canônicos — Nunca ajustar empiricamente
+
+**Regra:** antes de tocar em qualquer threshold, floor de variância ou multiplicador da
+Layer 3, consultar obrigatoriamente a memória `layer3_canonical_params.md`.
+Ajustes sem evidência de pesquisa (paper citado) são proibidos.
+
+**Floors de variância mínima (`core/baseline.py`) — validados em Ledger #60 (01/08/2026):**
+
+| Sinal | Floor | Fonte |
+| ----- | ----- | ----- |
+| RMSSD | **100 ms²** | Plews et al. 2012 (CV 20-30%) + Bent et al. 2020 (PPG 30%) |
+| SPO2 | **0.25 %²** | Resolução PPG ±0.5% |
+| HF_POWER_MS2 | **10000 ms⁴** | Variância espectral inter-sessão típica |
+| PEAK_FREQ_HZ | **0.002 Hz²** | FFT Δf = 1/180s, std ≈ 0.05 Hz |
+| EDA_SCL | **0.25 µS²** | Variabilidade basal de sensor EDA |
+
+**Multiplicadores de threshold Mahalanobis (`core/crypto.py`):**
+
+- **GAP-B09** (Fitzpatrick V–VI + PPG): **×1.4** — Bent et al. 2020 + Mannheimer et al. 2021
+- **GAP-B10** (samsung_watch via Health Connect): **×1.3** — Bent et al. 2020 (erro PPG ~30%)
+- **Cap combinado**: ×1.8
+
+**Thresholds χ² base (`core/mahalanobis.py`) — nunca alterar sem novo paper:**
+
+- 2 sinais: **5.99** | 3 sinais: **7.81** | 5 sinais: **11.07**
+
+**Filtro de recalibração (`licet-android/.../SettingsViewModel.kt`):**
+
+- `activityLevel <= 2` — exclui exercício intenso (≥3); representa contexto de autorização 24h
+- `hrv >= 10.0` — mínimo fisiológico
+- `heartRate in 40.0..110.0` — fisiologicamente plausível
+
+**Nunca aumentar floors ou multiplicadores para "passar em testes".**
+Se um teste legítimo falha, investigar a causa raiz (contexto de medição, baseline enviesado)
+antes de relaxar parâmetros.
+
 ---
 
 ## Contexto do Projeto
