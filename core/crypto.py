@@ -385,20 +385,51 @@ def authorize(
         baseline_labels and "HF_POWER_MS2" in baseline_labels
     )
 
-    # ── GAP-B09: calcular threshold_multiplier por limitação PPG em pele escura ─
+    # ── GAP-B09 / GAP-B10: calcular threshold_multiplier por limitação PPG ────────
     # Executado antes de qualquer denial para que _deny possa referenciar as variáveis.
-    # Fontes PPG (LED verde/vermelho): erro de HRV de 30–40% em Fitzpatrick V–VI.
-    # Fontes ECG (polar_h10, pixel_watch_2) não são afetadas por tom de pele.
+    #
+    # GAP-B09 (equidade — pele escura):
+    #   Fontes PPG com Fitzpatrick V–VI: erro de HRV de 30–40% vs ECG (Bent et al.,
+    #   NPJ Digit Med 2020; Mannheimer et al., J Clin Mon 2021). Multiplicador ×1.4.
+    #
+    # GAP-B10 (acurácia PPG geral — samsung_watch via Health Connect):
+    #   Health Connect retorna medições pontuais (spot) de HRV, não médias de sessão.
+    #   Bent et al. 2020 demonstram erro PPG de 30% em todas as tonalidades de pele
+    #   (σ_medição ≈ 0.3×µ). A incompatibilidade entre o contexto de medição do
+    #   baseline (sessões de 180s) e da autorização (leitura spot do Health Connect)
+    #   adiciona variância não capturada pelo sigma_inv treinado. Multiplicador ×1.3.
+    #   Combinado com GAP-B09 quando aplicável: ×1.4 × ×1.3 = ×1.82 (cap em ×1.8).
     _PPG_SOURCES = {"apple_watch", "samsung_watch", "whoop", "max30102", "ble_generic", "simulation"}
     _fitz = reading.skin_tone_fitzpatrick
     _is_ppg = reading.hardware_source.lower() in _PPG_SOURCES
+    _is_samsung = reading.hardware_source.lower() == "samsung_watch"
+
+    # GAP-B09: equidade pele escura
     _ppg_equity_applied = bool(_fitz and _fitz >= 5 and _is_ppg)
-    _threshold_multiplier = 1.4 if _ppg_equity_applied else 1.0
-    _ppg_equity_warning: Optional[str] = (
-        f"GAP-B09: Threshold Mahalanobis ampliado ×1.4 (Fitzpatrick {_fitz}, PPG {reading.hardware_source}). "
-        "Bent et al. 2020 demonstram erro de HRV de 30–40% em peles Fitzpatrick V–VI com sensores PPG. "
-        "Este ajuste evita falsos positivos discriminatórios. Recomendado: sensor ECG (Polar H10 / Pixel Watch 2)."
-    ) if _ppg_equity_applied else None
+    _equity_mult = 1.4 if _ppg_equity_applied else 1.0
+
+    # GAP-B10: acurácia geral PPG Samsung (Health Connect spot measurement)
+    _samsung_ppg_applied = _is_samsung and not _ppg_equity_applied
+    _samsung_mult = 1.3 if _samsung_ppg_applied else 1.0
+
+    _threshold_multiplier = min(_equity_mult * _samsung_mult, 1.8)  # cap em ×1.8
+    _ppg_equity_applied = _ppg_equity_applied or _samsung_ppg_applied
+
+    _ppg_equity_warning: Optional[str] = None
+    if _ppg_equity_applied and _fitz and _fitz >= 5:
+        _ppg_equity_warning = (
+            f"GAP-B09: Threshold Mahalanobis ampliado ×{_threshold_multiplier:.1f} "
+            f"(Fitzpatrick {_fitz}, PPG {reading.hardware_source}). "
+            "Bent et al. 2020 demonstram erro de HRV de 30–40% em peles Fitzpatrick V–VI com sensores PPG. "
+            "Recomendado: sensor ECG (Polar H10 / Pixel Watch 2)."
+        )
+    elif _samsung_ppg_applied:
+        _ppg_equity_warning = (
+            f"GAP-B10: Threshold Mahalanobis ampliado ×{_threshold_multiplier:.1f} "
+            "(samsung_watch via Health Connect). "
+            "Bent et al. 2020: erro PPG de ~30% vs ECG. "
+            "Medição spot do Health Connect diverge de sessões de baseline (180s)."
+        )
 
     def _deny(reason: str, ecg: ECGLayerResult, eda: EDALayerResult,
               pharma: PharmacologicalCheckResult, maha: MahalanobisResult,

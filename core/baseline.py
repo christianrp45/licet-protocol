@@ -426,20 +426,35 @@ def build_baseline(
     cov = _cov_matrix(observations)
 
     # Floor mínimo de variância diagonal por sinal — evita sigma_inv zerado
-    # quando poucas sessões produzem variância degenerada (ex: SpO₂=98 em todas).
-    # Valores calibrados na resolução do sensor: SpO₂ PPG ±0.5%, RMSSD ±2ms.
+    # e garante que pequenas amostras não produzam matriz super-rígida.
+    # Floors calibrados na variabilidade biológica DIÁRIA (entre sessões),
+    # não na resolução do sensor — o baseline representa o range normal do usuário.
+    # Referência: RMSSD intra-individual CV ≈ 20-30% (Plews et al. 2012).
+    # Floor mínimo de variância baseado em evidência da literatura:
+    #
+    # RMSSD: Plews et al. 2012 (Int J Sports Physiol Perform) — CV intra-individual
+    #   de 20–30% em medições diárias (std ≈ 5–8ms para µ≈25ms, var ≈ 25–64ms²).
+    #   Somando ruído de medição PPG: Bent et al. 2020 (NPJ Digit Med) reporta erro
+    #   de 30–40% em PPG vs ECG gold standard → erro adicional ≈ 7.5ms → var ≈ 56ms².
+    #   Floor combinado (variabilidade real + ruído PPG): 100ms² (std=10ms).
+    #   Nota: threshold_multiplier=1.5 para samsung_watch (GAP-B09) é aplicado no
+    #   backend sobre o χ² — não compensar aqui com floor excessivo.
+    #
+    # SPO2: resolução PPG ±0.5% → var ≥ 0.25 %²
+    # HF_POWER_MS2: alta variância espectral inter-sessão → floor conservador 10000ms⁴
+    # PEAK_FREQ_HZ: resolução FFT com janelas de 180s → Δf ≈ 0.006Hz → floor 0.002Hz²
     _MIN_VAR: dict = {
-        "RMSSD":          4.0,    # std mínimo = 2 ms (resolução PPG derivada)
-        "SPO2":           0.25,   # std mínimo = 0.5 % (resolução PPG ±0.5%)
-        "EDA_SCL":        0.01,   # std mínimo = 0.1 µS
-        "EDA_SCR":        0.001,
-        "SKIN_TEMP":      0.04,   # std mínimo = 0.2 °C
+        "RMSSD":          100.0,  # std=10ms — Plews 2012 + Bent 2020
+        "SPO2":           0.25,   # std=0.5% — resolução PPG
+        "EDA_SCL":        0.25,   # std=0.5µS
+        "EDA_SCR":        0.01,
+        "SKIN_TEMP":      0.04,   # std=0.2°C
         "TREMOR_8_12HZ":  1e-6,
-        "HF_POWER_MS2":   1.0,
-        "PEAK_FREQ_HZ":   0.0001,
+        "HF_POWER_MS2":   10000.0, # std≈100ms² — alta variância espectral inter-sessão
+        "PEAK_FREQ_HZ":   0.002,   # std≈0.045Hz — resolução espectral FFT (180s window)
     }
     for i, lbl in enumerate(labels):
-        floor = _MIN_VAR.get(lbl, 1e-4)
+        floor = _MIN_VAR.get(lbl, 0.01)
         if cov[i][i] < floor:
             cov[i][i] = floor
 
