@@ -4,7 +4,7 @@
 
 **Document:** wearable-attester-licet-00
 **Status:** Skeleton / in progress — awaiting topology review by David Condrey
-**Authors:** Christian Pereira (NeuroTrust)
+**Authors:** Christian Rodrigues Pereira (eColabs)
 **Date:** 2026-07-10
 **Related:** draft-pereira-licet-human-intent-01, LF-Decentralized-Trust-labs/proof-of-effort PR #97
 
@@ -101,7 +101,7 @@ Each sub-attester produces Claims. The Composite Attester aggregates them into a
 | **Attester** | LICET wearable device | Produces Evidence about physiological state |
 | **Verifier** | LICET Verifier service | Appraises Evidence against Endorsements and Reference Values |
 | **Relying Party** | Authorization endpoint (app, door, transaction system) | Consumes Attestation Result; applies authorization policy |
-| **Endorser** | Device manufacturer / NeuroTrust | Provides Endorsements (device cert, baseline parameters) |
+| **Endorser** | Device manufacturer / eColabs | Provides Endorsements (device cert, baseline parameters) |
 
 ### 4.3 Attestation Models
 
@@ -155,7 +155,7 @@ Evidential weight follows attestation level. Higher levels require stronger atte
 
 **Claim supported:** "A hardware-attested sensor on a certified device produced a measurement consistent with the claimed physiological state, with the measurement chain attested to the silicon boundary."
 
-**Note:** No commercially available consumer wearable currently meets L3 as defined here. L3 is the target architecture for NeuroTrust's hardware program. Current deployments operate at L0 (simulation) or L1 (platform attestation via mobile OS).
+**Note:** No commercially available consumer wearable currently meets L3 as defined here. L3 is the target architecture for eColabs hardware program. Current deployments operate at L0 (simulation) or L1 (platform attestation via mobile OS).
 
 ---
 
@@ -242,7 +242,7 @@ The rationale for deferral: fixing the encoding before the L0–L3 chain is stab
 
 These items are flagged for David Condrey's review of the topology and appraisal logic:
 
-1. **L2 cert chain:** Should the Endorser role be filled by NeuroTrust alone, or should the spec support a multi-endorser model (manufacturer + NeuroTrust + Relying Party)?
+1. **L2 cert chain:** Should the Endorser role be filled by eColabs alone, or should the spec support a multi-endorser model (manufacturer + eColabs + Relying Party)?
 2. **Composite Attester boundary:** Is the current sub-attester breakdown in §4.1 the right granularity, or should the sensor layer and processing layer be a single sub-attester?
 3. **Limitation flags in Attestation Results:** Are the four flags in §6.2 the right set, or are there additional flags the appraisal logic should surface?
 4. **ZKP scope claim:** Is the `zkp-scope` structure in §6.3 the right format for the evidence-packet schema, or should it map to existing CPoE claim keys?

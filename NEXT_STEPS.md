@@ -1,10 +1,10 @@
 ---
-updatedAt: 2026-07-28
+updatedAt: 2026-08-01
 ---
 
 # LICET — Próximos Passos
 
-## ✅ CONCLUÍDO até 28/07/2026
+## ✅ CONCLUÍDO até 01/08/2026
 
 ### Backend / Segurança
 - **CA-01** ✅ `verify_admin_token()` com `hmac.compare_digest()`
@@ -15,30 +15,50 @@ updatedAt: 2026-07-28
 - **CA-06** ✅ HKDF salt = `SHA256(user_id + timestamp)` por sessão
 - **CA-07** ✅ Floats HMAC com `Locale.US` no Android (fix 401 pt-BR)
 - **CA-09** ✅ `bio_payload_hash` no ledger
-- **V2 bug** ✅ Tríade anticolinérgica corrigida (`EDA_SCL=0.2µS + HR=102bpm`)
+- **V2 bug** ✅ Tríade anticolinérgica corrigida (`EDA_SCL is not None` gate)
 - **Threshold IP individual** ✅ `mean + 2σ` do baseline por usuário (floor=0.80)
 - **Cloud SQL** ✅ Baseline persistente entre deploys (PostgreSQL 15, us-central1-a)
+- **Floor RMSSD=100ms²** ✅ GAP-B10 ×1.3 aplicados — validados Ledger #60
 
 ### Android App (`licet-android/`)
 - **Dashboard** ✅ Métricas LICET em tempo real (`trust_level`, `IP`, `D²`, `forgery_cost`)
 - **Settings screen** ✅ Provisionar `LICET_MOBILE_APP_SECRET` via EncryptedSharedPreferences
 - **Health Connect** ✅ Fallback 7 dias para SpO₂/HRV (Watch 6 mede pontualmente)
-- **Opção B aprovada** ✅ 1ª autorização real Galaxy Watch 6 — **Ledger #8 AUTORIZADO**
-  - FC: 64 BPM | SpO₂: 98% | HRV: 45ms | IP: 0.375 | source: `health_connect`
-  - Fluxo completo: Watch 6 → Samsung Health → Health Connect → licet.dev → Ledger
+- **Fix IP falso positivo** ✅ `rrIntervals = emptyList()` — elimina PACED_BREATHING_DETECTED espúrio
+- **Fix block pós-emptyList** ✅ Removido gate `rrIntervals.size < 60` no DashboardViewModel
+- **Fix µ_RMSSD drift** ✅ `importHistory` usa janelas 24h + HRV rolling 7 dias (sem fallback fixo)
+- **Filtro canônico** ✅ `activityLevel <= 2`, `hrv >= 10.0` em recalibração
+- **Opção B aprovada** ✅ Ledger #69 AUTORIZADO — Watch 6 real, HRV=9.24ms, D²=4.2169
 
 ### Publicações
 - **Zenodo** ✅ DOI 10.5281/zenodo.21345045 (v2.0, CC BY 4.0)
 - **IACR ePrint** ✅ 2026/110546 (13/07/2026)
 - **SSRN** ✅ Abstract ID 7018458
 - **MDPI Cryptography** ✅ Submetido (aguardando revisão)
-- **IETF draft** ✅ draft-pereira-licet-human-intent
+- **IETF draft** ✅ draft-pereira-licet-human-intent-01
+
+---
+
+## EM ANDAMENTO — Maturidade do baseline (Layer 3)
+
+Baseline zerado em 01/08/2026 (erasure após contamination µ≈45ms).
+`BaselineCollectionService` está coletando sessões passivamente via `captureReading(180)`.
+
+| Meta | Status |
+|------|--------|
+| 5 sessões | Coleta passiva em andamento |
+| maturity=0.4 | Aguardando |
+| maturity=0.7 | Aguardando |
+| 3 dias distintos → maturity=1.0 | ~3 dias de uso normal |
+
+**Não usar "Recalibrar com Watch 6"** — importa dados de sono (µ≈45ms, contexto errado).
+Deixar coleta passiva agir.
 
 ---
 
 ## PRÓXIMO — Opção A: `licet-wear` (Wear OS nativo)
 
-> Pré-requisito: Opção B aprovada ✅ — prontos para iniciar.
+> Pré-requisito: Opção B aprovada ✅ — prontos para iniciar após maturidade 1.0.
 
 | # | Tarefa | Esforço |
 |---|--------|---------|
@@ -59,7 +79,6 @@ updatedAt: 2026-07-28
 | S2 | Trocar `LICET_SECRET_KEY` (`temp_key_troque_depois`) | ALTO |
 
 ```bash
-# Gerar novos segredos:
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
@@ -91,3 +110,4 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 - `"continua os próximos passos"` → lê este arquivo
 - `"trocar secrets de produção"` → gerar novos + `gcloud run services update`
 - `"recurso arXiv"` → submeter appeal com DOI MDPI quando disponível
+- `"como está o baseline?"` → `curl https://licet.dev/v1/baseline/status?user_id=6103c0171723584a`
