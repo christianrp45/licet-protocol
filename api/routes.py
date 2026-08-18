@@ -198,6 +198,7 @@ class BaselineSubmitRequest(BaseModel):
     # RR intervals em ms — necessários para incluir HF power e peak_freq no baseline
     # Requer ≥60 amostras (≈60 s) para análise espectral confiável
     rr_intervals: Optional[List[float]] = None
+    spo2_is_fallback: Optional[bool] = None  # True quando SpO2 não foi medido na janela — estimativa 98.0
 
 
 # ── Cache em memória ──────────────────────────────────────────────────────────
