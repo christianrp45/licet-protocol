@@ -2,7 +2,7 @@
 
 # LICET — Biological Sensor Device Matrix
 
-*Versão: 1.0 | Data: 2026-07-09 | Autor: Christian Rodrigues Pereira / NeuroTrust*
+*Versão: 1.0 | Data: 2026-07-09 | Autor: Christian Rodrigues Pereira / eColabs*
 *Contexto: Pesquisa exaustiva de dispositivos com sensores biológicos para integração ao protocolo LICET v2.0*
 
 ---
