@@ -228,7 +228,7 @@ def _determine_trust_level(
         return "L2"
 
     # L1: wearable com atestação de plataforma (HealthKit / Health Connect)
-    if source in ("apple_watch", "samsung_watch", "whoop", "polar_h10", "max30102", "ble_generic"):
+    if source in ("apple_watch", "samsung_watch", "samsung_watch_bpm_only", "whoop", "polar_h10", "max30102", "ble_generic"):
         return "L1"
 
     return "L0"
@@ -399,10 +399,12 @@ def authorize(
     #   baseline (sessões de 180s) e da autorização (leitura spot do Health Connect)
     #   adiciona variância não capturada pelo sigma_inv treinado. Multiplicador ×1.3.
     #   Combinado com GAP-B09 quando aplicável: ×1.4 × ×1.3 = ×1.82 (cap em ×1.8).
-    _PPG_SOURCES = {"apple_watch", "samsung_watch", "whoop", "max30102", "ble_generic", "simulation"}
+    _PPG_SOURCES = {"apple_watch", "samsung_watch", "samsung_watch_bpm_only", "whoop", "max30102", "ble_generic", "simulation"}
     _fitz = reading.skin_tone_fitzpatrick
     _is_ppg = reading.hardware_source.lower() in _PPG_SOURCES
-    _is_samsung = reading.hardware_source.lower() == "samsung_watch"
+    # GAP-B10 aplica-se a samsung_watch e samsung_watch_bpm_only — mesmo hardware PPG,
+    # mesma limitação de acurácia de ~30% vs ECG (Bent et al. 2020).
+    _is_samsung = reading.hardware_source.lower() in ("samsung_watch", "samsung_watch_bpm_only")
 
     # GAP-B09: equidade pele escura
     _ppg_equity_applied = bool(_fitz and _fitz >= 5 and _is_ppg)

@@ -3,7 +3,7 @@
 **"Nenhuma IA age sem você."**
 
 **Autor:** Christian Rodrigues Pereira  
-**Organização:** NeuroTrust  
+**Organização:** eColabs  
 **Data:** 13 de julho de 2026 (atualizado — submetido ao arXiv cs.CR)  
 **URL de referência:** https://licet.dev  
 **Anterioridade:** NeuroTrust_Master_Protocol_v1.pdf.ots — 25/02/2026 (OpenTimestamps)  
@@ -655,7 +655,7 @@ Complementa os requisitos de responsabilidade médica em contextos onde agentes 
 | **PR #97 LF Decentralized Trust** | proof-of-effort (LF-Decentralized-Trust-labs) — submetido 02/07/2026 |
 | **Colaboração CPoE** | David Condrey (Linux Foundation / IETF RATS WG) — caminho de co-autoria aberto via draft-condrey-cpoe-protocol |
 | **Registro de marca** | Pendente — INPI Classe 42 |
-| **Organização** | NeuroTrust |
+| **Organização** | eColabs |
 
 ---
 

@@ -2,7 +2,7 @@
 
 # LICET — Security Considerations: Análise Exaustiva de Gaps
 
-*Versão: 1.1 | Data: 2026-07-26 | Autor: Christian Rodrigues Pereira / NeuroTrust*
+*Versão: 1.1 | Data: 2026-07-26 | Autor: Christian Rodrigues Pereira / eColabs*
 *Contexto: Documento de Security Considerations para o IETF draft-pereira-licet-human-intent*
 *Total de gaps identificados: 52 | Dimensões: 7*
 *Revisão 1.1 (26/07/2026): 7 novos gaps identificados via CryptoAudit (leitura formal do código com skill especializada — 6 domínios IACR/NIST/STRIDE). Dois críticos afetam produção imediatamente (CA-01, CA-02).*

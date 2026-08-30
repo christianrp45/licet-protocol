@@ -148,5 +148,5 @@ D²=0.0 para dados idênticos ao baseline — sem liveness detection.
 
 ---
 
-*Documento gerado em 26/07/2026. NeuroTrust / LICET Protocol.*
+*Documento gerado em 26/07/2026. eColabs / LICET Protocol.*
 *DOI: 10.5281/zenodo.21345045*

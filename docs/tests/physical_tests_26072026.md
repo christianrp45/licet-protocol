@@ -4,7 +4,7 @@
 **Dispositivo:** Samsung Galaxy Watch 6 SM-R930 (40mm Bluetooth)  
 **Ambiente:** Produção — https://licet.dev/v1 (Cloud Run us-central1)  
 **Revisões deployadas:** licet-00018-l8m, licet-00019-kgd  
-**Executado por:** Christian Rodrigues Pereira, NeuroTrust
+**Executado por:** Christian Rodrigues Pereira, eColabs
 
 ---
 
@@ -255,5 +255,5 @@ podem ter IP > 0.80 em repouso genuíno.
 
 ---
 
-*Documento gerado em 26/07/2026. NeuroTrust / LICET Protocol.*  
+*Documento gerado em 26/07/2026. eColabs / LICET Protocol.*  
 *DOI de referência: 10.5281/zenodo.21345045*

@@ -4,7 +4,7 @@
 **Dispositivo:** Samsung Galaxy S (RXCX209Y1BP) + Galaxy Watch 6 SM-R930  
 **App:** licet-android v1.0 (commits 4f1582b, bc52d39)  
 **Backend:** https://licet.dev/v1 (Cloud Run southamerica-east1, revisão licet-00023+)  
-**Executado por:** Christian Rodrigues Pereira, NeuroTrust  
+**Executado por:** Christian Rodrigues Pereira, eColabs  
 **Histórico:** Primeira autorização LICET com biometria de hardware real (não sintética).
 
 ---
@@ -166,6 +166,6 @@ Com Opção B validada, o próximo passo é `licet-wear`:
 
 ---
 
-*Documento gerado em 28/07/2026. NeuroTrust / LICET Protocol.*  
+*Documento gerado em 28/07/2026. eColabs / LICET Protocol.*  
 *DOI de referência: 10.5281/zenodo.21345045*  
 *IACR ePrint: 2026/110546*

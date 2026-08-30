@@ -80,7 +80,7 @@ class AuthorizationRequest(BaseModel):
 
 class BiometricPushRequest(BaseModel):
     """Payload enviado pelo app iOS ou Android com dados do wearable."""
-    source: str              # "apple_watch" | "samsung_watch" | "whoop" | "polar_h10"
+    source: str              # "apple_watch" | "samsung_watch" | "samsung_watch_bpm_only" | "whoop" | "polar_h10"
     heart_rate: float
     spo2: float
     hrv: float
@@ -448,8 +448,12 @@ def receive_biometric_push(req: BiometricPushRequest):
     Retorna um push_id válido por 60 segundos para uso em /authorize/from-push.
     Aceita sinais avançados opcionais: eda_scl, eda_scr, skin_temp, tremor_8_12hz.
     """
-    # CA-03: rr_intervals obrigatório para hardware real
-    if req.source != "simulation" and not req.rr_intervals:
+    # CA-03: rr_intervals obrigatório para hardware real.
+    # Isentos: "simulation" e "samsung_watch_bpm_only" (Watch 6 via Wear OS TYPE_HEART_RATE —
+    # BPM suavizado a ~1Hz não produz IBI beat-to-beat reais; enviar rrIntervals causaria
+    # IP falso positivo. Limitação documentada; análise de periodicidade respiratória é pulada.)
+    _CA03_EXEMPT = {"simulation", "samsung_watch_bpm_only"}
+    if req.source not in _CA03_EXEMPT and not req.rr_intervals:
         raise HTTPException(
             status_code=422,
             detail=(
@@ -566,6 +570,16 @@ def authorize_from_push(req: AuthorizationFromPushRequest):
         "antes de qualquer coleta biométrica."
     ) if bundle.ui_binding_status == "ABSENT" else None
 
+    # AU-02: IP check não executado para source sem IBI beat-to-beat.
+    # Sinaliza ao Relying Party conforme semântica do flag (PR #103 — respiratory-periodicity-warning).
+    _ip_warning = bundle.respiratory_periodicity_warning
+    if source == "samsung_watch_bpm_only" and not _ip_warning:
+        _ip_warning = (
+            "IP check skipped: samsung_watch_bpm_only does not provide beat-to-beat "
+            "IBI; respiratory periodicity cannot be assessed. Paced breathing attack "
+            "(GAP-B01) is undetectable on this path."
+        )
+
     return AuthorizationResponse(
         authorized=bundle.authorized,
         intent_hash=bundle.intent_hash,
@@ -591,7 +605,7 @@ def authorize_from_push(req: AuthorizationFromPushRequest):
         hardware_source=source,
         beta_blocker_confound_warning=bb_warning,
         respiratory_periodicity_index=bundle.respiratory_periodicity_index,
-        respiratory_periodicity_warning=bundle.respiratory_periodicity_warning,
+        respiratory_periodicity_warning=_ip_warning,
         layer_forgery_cost=bundle.layer_forgery_cost,
         ui_binding_status=bundle.ui_binding_status,
         ui_binding_warning=ui_warning,
@@ -1092,6 +1106,7 @@ def ledger_timestamp():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ancoragem falhou: {e}")
     return result
+
 
 
 @router.post("/admin/revoke/{ledger_id}")

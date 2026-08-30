@@ -1,5 +1,5 @@
 # LICET — Guia Completo de Aprendizado
-## Para Christian Rodrigues Pereira | NeuroTrust | Julho 2026
+## Para Christian Rodrigues Pereira | eColabs | Julho 2026
 
 > **Como usar este guia:**
 > Este documento foi escrito inteiramente em português para que você possa estudar o LICET
@@ -854,7 +854,7 @@ GDPR: dados biométricos nunca são armazenados em texto claro — apenas hashes
 
 **LGPD** | *Lei Geral de Proteção de Dados (Brasil)*
 
-Equivalente brasileiro do GDPR. Entrou em vigor em 2020. A NeuroTrust já notificou a
+Equivalente brasileiro do GDPR. Entrou em vigor em 2020. A eColabs já notificou a
 ANPD (Autoridade Nacional de Proteção de Dados) sobre o protocolo LICET.
 
 ---
@@ -862,7 +862,7 @@ ANPD (Autoridade Nacional de Proteção de Dados) sobre o protocolo LICET.
 **ANPD** | *Autoridade Nacional de Proteção de Dados (Brasil)*
 
 Órgão regulador brasileiro responsável por fiscalizar o cumprimento da LGPD. Equivalente
-brasileiro do ICO (Reino Unido) ou CNIL (França). Contato da NeuroTrust: ouvidoria@anpd.gov.br.
+brasileiro do ICO (Reino Unido) ou CNIL (França). Contato da eColabs: ouvidoria@anpd.gov.br.
 
 ---
 
@@ -892,7 +892,7 @@ cs.AI + cs.HC, licença CC BY) — endossado por David Condrey (IETF RATS WG).
 
 **INPI** | *Instituto Nacional da Propriedade Industrial (Brasil)*
 
-Órgão brasileiro responsável por registros de marcas e patentes. A NeuroTrust está
+Órgão brasileiro responsável por registros de marcas e patentes. A eColabs está
 registrando LICET na Classe 42 (serviços tecnológicos).
 
 ---
@@ -901,7 +901,7 @@ registrando LICET na Classe 42 (serviços tecnológicos).
 
 ---
 
-**NeuroTrust** | *NeuroTrust*
+**eColabs** | *eColabs*
 
 A empresa fundada por Christian Rodrigues Pereira para desenvolver e comercializar o
 protocolo LICET. Razão social: eColabs Desenvolvimento de Pessoas e Organizações LTDA.
@@ -1480,7 +1480,7 @@ com a pergunta "Quem REALMENTE autorizou isso?" em destaque.
    conhecimento zero + registro em ledger hash-chained. Imutável e verificável.
 
 3. **Aberto** — Protocolo open standard no IETF. Qualquer fabricante de wearable,
-   qualquer sistema de IA, qualquer banco pode implementar. A NeuroTrust mantém a
+   qualquer sistema de IA, qualquer banco pode implementar. A eColabs mantém a
    implementação de referência e o ecossistema.
 
 ---
@@ -1819,6 +1819,6 @@ Se você precisar resumir o LICET em pontos para uma conversa rápida:
 
 ---
 
-*Este documento foi gerado pela IA Claude (Anthropic) para uso exclusivo de Christian Rodrigues Pereira / NeuroTrust.*
+*Este documento foi gerado pela IA Claude (Anthropic) para uso exclusivo de Christian Rodrigues Pereira / eColabs.*
 *Última atualização: 27/07/2026 — v1.2 (CryptoAudit 9 achados, testes físicos Watch 6, Samsung SDK v1.4.1, 52 gaps, roadmap ZKP e PQC, 12 conceitos)*
 *Versão LICET: 2.1.0 — 11 gaps de segurança mitigados em código (07–09/07/2026)*
