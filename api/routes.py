@@ -132,7 +132,9 @@ class AuthorizationResponse(BaseModel):
     layer2_eda_scl: Optional[float]
     layer2_eda_scr: Optional[float]
     layer3_mahalanobis_status: str
-    layer3_mahalanobis_d2: Optional[float]
+    # F-05 fix: D² não exposto — evita oracle attack (membership inference do baseline).
+    # Um adversário com ~200 chamadas consegue mapear μ e Σ⁻¹ e craftar vetor abaixo do threshold.
+    # layer3_mahalanobis_d2: Optional[float]  ← removido da resposta pública
     # Farmacológico
     pharmacological_check: str
     pharmacological_confidence: str
@@ -444,7 +446,7 @@ def authorize_action(req: AuthorizationRequest):
         layer2_eda_scl=bundle.layer2_eda_scl,
         layer2_eda_scr=bundle.layer2_eda_scr,
         layer3_mahalanobis_status=bundle.layer3_mahalanobis_status,
-        layer3_mahalanobis_d2=bundle.layer3_mahalanobis_d2,
+        # layer3_mahalanobis_d2 removido (F-05) — não expor oracle de Mahalanobis
         pharmacological_check=bundle.pharmacological_check,
         pharmacological_confidence=bundle.pharmacological_confidence,
         trust_level=bundle.trust_level,
@@ -616,7 +618,7 @@ def authorize_from_push(req: AuthorizationFromPushRequest):
         layer2_eda_scl=bundle.layer2_eda_scl,
         layer2_eda_scr=bundle.layer2_eda_scr,
         layer3_mahalanobis_status=bundle.layer3_mahalanobis_status,
-        layer3_mahalanobis_d2=bundle.layer3_mahalanobis_d2,
+        # layer3_mahalanobis_d2 removido (F-05) — não expor oracle de Mahalanobis
         pharmacological_check=bundle.pharmacological_check,
         pharmacological_confidence=bundle.pharmacological_confidence,
         trust_level=bundle.trust_level,
@@ -1232,7 +1234,7 @@ def admin_revoke_entry(ledger_id: int, req: RevokeRequest, _: None = Depends(ver
 # ── GDPR (GAP-A05) ───────────────────────────────────────────────────────────
 
 @router.get("/gdpr/data/{user_id}")
-def gdpr_data_access(user_id: str):
+def gdpr_data_access(user_id: str, _: None = Depends(verify_admin_token)):
     """
     GAP-A05 / GDPR Art. 15 — Direito de acesso.
 
@@ -1242,6 +1244,9 @@ def gdpr_data_access(user_id: str):
 
     Dados brutos (ECG waveform, RR intervals) nunca são persistidos —
     apenas features derivadas, por design (GDPR Art. 25 — Privacy by Design).
+
+    Requer X-Admin-Token (F-01 fix): user_id não é segredo — exposto em todo push.
+    Sem autenticação, qualquer um com user_id lê ou apaga dados de qualquer usuário.
     """
     initialize_db()
     try:
@@ -1252,7 +1257,7 @@ def gdpr_data_access(user_id: str):
 
 
 @router.delete("/gdpr/erasure/{user_id}")
-def gdpr_erasure(user_id: str):
+def gdpr_erasure(user_id: str, _: None = Depends(verify_admin_token)):
     """
     GAP-A05 / GDPR Art. 17 / LGPD Art. 18 VI — Direito ao esquecimento.
 
@@ -1264,6 +1269,8 @@ def gdpr_erasure(user_id: str):
     - Entradas são pseudônimas (sem user_id)
     - Constituem registro de auditoria regulatória (LGPD Art. 16 II)
     - Podem ser revogadas individualmente via POST /admin/revoke/{ledger_id}
+
+    Requer X-Admin-Token (F-01 fix): operação destrutiva irreversível.
     """
     initialize_db()
     try:
