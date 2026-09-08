@@ -19,6 +19,7 @@ import random
 import secrets as sec
 import hmac as hmac_lib
 import hashlib
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -282,6 +283,18 @@ def _verify_mobile_hmac(
     def _f(val: Optional[float], fmt: str) -> str:
         return fmt.format(val) if val is not None else "none"
 
+    def _fmt1(val: float) -> str:
+        """Arredondamento Python padrão (banker's rounding / half-to-even)."""
+        return f"{val:.1f}"
+
+    def _fmt1_java(val: float) -> str:
+        """Arredondamento HALF_UP — equivalente ao String.format('%.1f') do Java/Kotlin.
+        Necessário porque Java e Python divergem em valores exatamente em .X5:
+          Python: 35.25 -> '35.2'  (banker's rounding)
+          Java:   35.25 -> '35.3'  (HALF_UP)
+        """
+        return str(Decimal(str(val)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
     ts = int(start_timestamp)
 
     # rr_hash — presente em v2 e v3
@@ -291,25 +304,27 @@ def _verify_mobile_hmac(
     else:
         rr_hash = "none"
 
-    # v3 — CA-04: cobre user_id, EDA, skin_temp, tremor, skin_tone (CA-07: floats com :.1f)
-    sig_v3 = (
-        f"{req_source}:{heart_rate:.1f}:{spo2:.1f}:{hrv:.1f}:{ts}:{rr_hash}"
-        f":{user_id or 'none'}"
-        f":{_f(eda_scl, '{:.1f}')}"
-        f":{_f(eda_scr, '{:.3f}')}"
-        f":{_f(skin_temp, '{:.1f}')}"
-        f":{_f(tremor_8_12hz, '{:.3f}')}"
-        f":{skin_tone_fitzpatrick if skin_tone_fitzpatrick is not None else 'none'}"
-    )
+    def _build_sigs(f1) -> tuple:
+        """Gera v3, v2, v1 com a função de formatação f1."""
+        v3 = (
+            f"{req_source}:{f1(heart_rate)}:{f1(spo2)}:{f1(hrv)}:{ts}:{rr_hash}"
+            f":{user_id or 'none'}"
+            f":{_f(eda_scl, '{:.1f}')}"
+            f":{_f(eda_scr, '{:.3f}')}"
+            f":{_f(skin_temp, '{:.1f}')}"
+            f":{_f(tremor_8_12hz, '{:.3f}')}"
+            f":{skin_tone_fitzpatrick if skin_tone_fitzpatrick is not None else 'none'}"
+        )
+        v2 = f"{req_source}:{f1(heart_rate)}:{f1(spo2)}:{f1(hrv)}:{ts}:{rr_hash}"
+        v1 = f"{req_source}:{heart_rate}:{spo2}:{hrv}:{ts}"
+        return v3, v2, v1
 
-    # v2 — com rr_hash mas sem campos opcionais
-    sig_v2 = f"{req_source}:{heart_rate:.1f}:{spo2:.1f}:{hrv:.1f}:{ts}:{rr_hash}"
-
-    # v1 — legado: sem rr_hash (retrocompatibilidade com apps antigos)
-    sig_v1 = f"{req_source}:{heart_rate}:{spo2}:{hrv}:{ts}"
+    # Tenta primeiro com banker's rounding (Python padrão), depois com HALF_UP (Java/Kotlin).
+    # Garante compatibilidade independente de onde o valor cai em relação a .X5.
+    all_candidates = _build_sigs(_fmt1) + _build_sigs(_fmt1_java)
 
     secret = app_secret.encode()
-    for sig_data in (sig_v3, sig_v2, sig_v1):
+    for sig_data in all_candidates:
         expected = hmac_lib.new(secret, sig_data.encode(), hashlib.sha256).hexdigest()
         if hmac_lib.compare_digest(expected, hmac_sig):
             return
@@ -350,6 +365,13 @@ def health():
         "status": "online",
         "protocol": "LICET — Human Intent Protocol",
         "version": "2.0.0",
+        # Versão mínima do APK compatível com este contrato de API.
+        # Incrementar quando houver mudança breaking no payload (novo campo
+        # obrigatório no HMAC, endpoint renomeado, modelo alterado).
+        "min_apk_version_code": 1,
+        # Versão do contrato de payload — independente da versão semântica da API.
+        # APK verifica se seu api_contract_version == este valor.
+        "api_contract_version": 1,
         "hardware_mode": mode,
         "timestamp": time.time(),
     }
@@ -716,6 +738,20 @@ def baseline_submit(req: BaselineSubmitRequest):
         save_baseline(new_baseline, engine)
         baseline_updated = True
         maturity = new_baseline.maturity_score
+    else:
+        # Renovação preemptiva: baseline existente prestes a expirar (≤RENEW_THRESHOLD_DAYS)
+        # Reconstrói com novo TTL de 30d antes que o cliente perca acesso à Layer 3.
+        from core.baseline import BASELINE_RENEW_THRESHOLD_DAYS
+        try:
+            existing = load_baseline(req.user_id, engine)
+            if existing and (existing.expires_at - time.time()) <= BASELINE_RENEW_THRESHOLD_DAYS * 86400:
+                renewed = build_baseline(req.user_id, all_sessions, heart_rates)
+                if renewed:
+                    save_baseline(renewed, engine)
+                    baseline_updated = True
+                    maturity = renewed.maturity_score
+        except Exception:
+            pass  # renovação é best-effort — não interrompe o fluxo principal
 
     del _baseline_sessions[req.session_token]
 
@@ -764,21 +800,25 @@ def baseline_status(user_id: str):
     from core.baseline import MIN_SESSIONS
 
     if not baseline:
+        can_rebuild = len(valid_sessions) >= MIN_SESSIONS
+        rebuild_msg = (
+            " Use POST /v1/baseline/rebuild para recuperar imediatamente a partir das sessões existentes."
+            if can_rebuild else
+            f" Complete {max(0, MIN_SESSIONS - len(valid_sessions))} sessão(ões) "
+            f"de ≥3 min em repouso via POST /v1/baseline/start."
+        )
         return {
             "user_id": user_id,
             "baseline_ready": False,
-            "baseline_expired": False,
+            "baseline_expired": True,
             "sessions_completed": len(valid_sessions),
             "sessions_remaining": max(0, MIN_SESSIONS - len(valid_sessions)),
             "maturity_score": 0.0,
             "trust_level_available": "L0",
             "signals_in_baseline": [],
             "expires_at": None,
-            "message": (
-                f"Baseline não calibrado. "
-                f"Complete {max(0, MIN_SESSIONS - len(valid_sessions))} sessão(ões) "
-                f"de ≥3 min em repouso via POST /v1/baseline/start."
-            ),
+            "can_rebuild": can_rebuild,
+            "message": f"Baseline não disponível (expirado ou não calibrado).{rebuild_msg}",
         }
 
     hardware_sources = list({s.hardware_source for s in valid_sessions})
@@ -799,6 +839,62 @@ def baseline_status(user_id: str):
         "expires_at": baseline.expires_at,
         "days_until_expiry": max(0, int((baseline.expires_at - time.time()) / 86400)),
         "hardware_sources": hardware_sources,
+    }
+
+
+@router.post("/baseline/rebuild")
+def baseline_rebuild(user_id: str):
+    """
+    Reconstrói o baseline a partir das sessões existentes em biometric_history.
+
+    Útil quando o baseline expirou mas o histórico de sessões ainda está disponível
+    (SESSION_RETENTION_DAYS=60 garante 30 dias de overlap após expiração do baseline).
+
+    Não coleta novos dados biométricos — recalcula μ, Σ⁻¹ e maturity_score com
+    todas as sessões válidas dos últimos SESSION_RETENTION_DAYS dias.
+
+    Retorna 409 se não houver sessões suficientes para rebuild.
+    """
+    initialize_db()
+
+    sessions_list = load_sessions(user_id, engine, limit=50)
+    valid_count = sum(1 for s in sessions_list if s.is_valid)
+
+    from core.baseline import MIN_SESSIONS
+    if valid_count < MIN_SESSIONS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Sessões insuficientes para rebuild: {valid_count} válidas, "
+                f"mínimo {MIN_SESSIONS}. "
+                f"Aguarde coleta do app ou use /baseline/start + /baseline/submit."
+            ),
+        )
+
+    heart_rates = [60.0] * len(sessions_list)  # FC histórica não é persistida — usar prior
+    new_baseline = build_baseline(user_id, sessions_list, heart_rates)
+
+    if not new_baseline:
+        raise HTTPException(
+            status_code=422,
+            detail="Rebuild falhou: sessões não produzem baseline válido (verifique qualidade dos sinais).",
+        )
+
+    save_baseline(new_baseline, engine)
+
+    hardware_sources = list({s.hardware_source for s in sessions_list if s.is_valid})
+    trust = "L1" if hardware_sources and "simulation" not in hardware_sources else "L0"
+
+    return {
+        "user_id": user_id,
+        "baseline_rebuilt": True,
+        "sessions_used": valid_count,
+        "maturity_score": new_baseline.maturity_score,
+        "trust_level_available": trust,
+        "signals_in_baseline": new_baseline.signal_labels,
+        "expires_at": new_baseline.expires_at,
+        "days_until_expiry": 30,
+        "timestamp": time.time(),
     }
 
 
