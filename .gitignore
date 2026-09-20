@@ -19,6 +19,12 @@ cloudbuild.yaml
 .dockerignore
 .env.example
 
+# Content portal — PDFs de conteúdo (não vão para o repo público; vão para o Cloud Build via .gcloudignore)
+content/
+
+# Scripts internos
+scripts/
+
 # Internal strategy — not for public
 CEO_PLAYBOOK.md
 MASTER_PLAN.md
@@ -65,3 +71,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
