@@ -37,6 +37,10 @@ docs/MASTER_PLAN.pdf
 docs/SUBMISSAO_ARXIV.pdf
 docs/INPI_REGISTRO_LICET.pdf
 
+# Dataset de terceiros (WESAD, Schmidt et al. 2018) — 17GB extraído, não pertence ao repo
+docs/research/wesad_experiment/WESAD/
+docs/research/wesad_experiment/WESAD.zip
+
 # Draft/legacy docs
 docs/arxiv/SUBMISSAO_ARXIV.md
 docs/arxiv/licet-preprint.tex

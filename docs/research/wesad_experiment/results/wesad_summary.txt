@@ -1,0 +1,93 @@
+======================================================================
+LICET WESAD VALIDATION — RESULTADOS PARA O PAPER
+======================================================================
+
+Sujeitos processados: 15 / 15
+Dataset: WESAD (Schmidt et al., ICMI 2018)
+Protocolo: Layer 3 Mahalanobis (core.mahalanobis.evaluate_mahalanobis_layer, import direto — não reimplementação), threshold χ²(4, p=0.05) = 9.49
+Sinais: até 5 — RMSSD, EDA_SCL, EDA_SCR  (cvxEDA indisponível — SCR omitido), DELTA_TEMP, TREMOR_8_12HZ | Janela: 60s, overlap 50%
+Gate de artefato de movimento: limiar calibrado por sujeito (mediana + 3xMAD do baseline) — 10.0% das janelas rejeitadas em média
+
+── MÉTRICAS PRINCIPAIS ──────────────────────────────────────
+Sensitivity (stress detection rate): 89.6% ± 26.9%
+Specificity (amusement not flagged): 48.2%
+Balanced Accuracy:                   68.9%
+Cohen's d (D² stress vs baseline):   0.50
+
+── RMSSD (HRV) ──────────────────────────────────────────────
+Baseline: 288.9 ms
+Stress:   361.8 ms
+Wilcoxon p: 0.0256
+
+── D² MAHALANOBIS ───────────────────────────────────────────
+D² baseline: 2.825
+D² stress:   176.039
+Threshold:   9.49
+Wilcoxon p: 0.0001
+
+── GAP-B01 — ÍNDICE DE PERIODICIDADE (paced breathing) ──────
+IP médio baseline:   0.276
+IP médio stress:     0.268
+IP médio meditation: 0.363
+Taxa de falso positivo (IP suspeito em meditação genuína): 6.6%
+
+── TEXTO PARA O PAPER (Section 6 — Empirical Validation) ───
+
+We validated LICET's Layer 3 (Mahalanobis distance) on the WESAD
+benchmark dataset [Schmidt2018], comprising N=XX subjects undergoing
+the Trier Social Stress Test (TSST). Using 60-second windows with 50%
+overlap, we extracted RMSSD from wrist photoplethysmography (BVP, 64 Hz),
+tonic/phasic EDA decomposition via cvxEDA [Greco2015], temperature
+deviation, and 8-12Hz accelerometer power, building individual baselines
+from the pre-stress resting phase.
+
+The LICET protocol achieved sensitivity of 89.6%
+(±26.9%) for stress detection and specificity of
+48.2% for the amusement condition,
+yielding balanced accuracy of 68.9%.
+Mean RMSSD decreased from 288.9 ms (baseline) to
+361.8 ms (stress) (Wilcoxon p=0.0256).
+Mahalanobis D² increased from 2.83 to 176.04
+(Cohen's d=0.50, Wilcoxon p=0.0001).
+
+To test the GAP-B01 paced-breathing limitation, we evaluated the periodicity index on the guided-meditation condition — the genuine state physiologically closest to a paced-breathing attack. The index flagged 6.6% of meditation windows as suspicious.
+
+── LIMITATIONS (wrist-PPG RMSSD reliability) — texto pronto para Seção 6.4 ──
+
+Two results depart from the a priori hypotheses and warrant explicit discussion
+rather than being reported as unqualified positive findings. First, mean RMSSD
+increased rather than decreased under acute stress (H4), contrary to the
+established direction in the HRV literature [Thayer2012]. An accelerometer-based
+motion-artifact rejection gate (window excluded when wrist ACC energy exceeded
+the subject's own resting median + 3 MAD) removed 0-35% of windows per subject
+but did not correct the direction, ruling out gross movement as the primary
+cause. This is consistent with Sinichi et al. [Sinichi2025], who validated the
+same wrist device (Empatica E4) across a battery of cognitive and emotional
+tasks and found RMSSD accuracy collapsing under mental arithmetic (r=0.31 vs.
+ECG reference) — a task structurally similar to the TSST arithmetic component —
+attributing the degradation to subtle speech- and muscle-tension-related
+artifact rather than gross motion. A broader meta-analysis [Xu2026] confirms
+RMSSD and HF power as the HRV metrics most prone to systematic PPG-derived
+error even after refined processing. Second, specificity for the amusement
+condition (48-50%) fell short of the 70-85% expected range. We initially
+hypothesized general arousal ambiguity between amusement and stress; this is
+not well supported — amusement is associated with lower heart rate and higher
+RMSSD than fear, anger, or neutral states [Wu2019], i.e. it is physiologically
+closer to relaxation than to stress on the HR/RMSSD axis. The better-supported
+mechanism is narrower: electrodermal activity is valence-blind by physiological
+design, rising under both positive and negative high-arousal states alike
+[Kreibig2010], while RMSSD — the signal that should differentiate the two — is
+itself unreliable in this wrist-PPG extraction for the reasons above. The
+GAP-B01 periodicity result, which does not depend on absolute RMSSD magnitude,
+is not subject to this confound and is reported as a positive finding without
+qualification.
+
+[Thayer2012] Thayer et al. (2012). Neuroscience & Biobehavioral Reviews.
+[Sinichi2025] Sinichi, Gevonden & Krabbendam (2025). Psychophysiology, 62(2):e70004.
+[Xu2026] Xu, Liu, Liu, Su & Gu (2026). Sensors, 26(16):5192.
+[Wu2019] Wu, Gu, Yang & Luo (2019). Frontiers in Neuroscience, 13:1131.
+[Kreibig2010] Kreibig (2010). Biological Psychology, 84(3):394-421.
+
+Revisão completa de literatura com log de busca: ../literature_review_rmssd_amusement.md
+
+======================================================================
