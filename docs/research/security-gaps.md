@@ -163,6 +163,148 @@ Pendente: revisão de auditoria externa, pen test formal, DPIA (GAP-L01).
 
 ---
 
+## DIMENSÃO CA-2 — Auditoria de Integração 27/09/2026 (client↔server desalinhados)
+
+> Origem: durante uma discussão sobre descentralizar o verificador, achamos que
+> `device_signature` (assinatura RSA do `DeviceKeyManager.kt`) nunca era
+> verificada pelo servidor. Uma auditoria dedicada (ver
+> `feedback_regressao_seguranca_silenciosa.md`) confirmou que esse é um
+> **padrão recorrente**: pelo menos 5 outros sinais de segurança calculados
+> pelo Android nunca chegam a influenciar a decisão do servidor, porque o
+> schema Pydantic nunca foi estendido para recebê-los — Pydantic descarta
+> campos desconhecidos silenciosamente, sem erro. Nenhum destes parece ter
+> sido uma decisão consciente.
+
+### GAP-CA-08 — device_signature: corrigido nesta sessão (27/09/2026)
+
+**Severidade:** CRÍTICA → ✅ CORRIGIDO
+**Estado anterior:** campo não declarado no Pydantic (Pydantic descartava), e mesmo se estivesse, o Android assinava um payload ad-hoc (`"$source:$hr:$spo2:${System.currentTimeMillis()}"`) que nunca era transmitido — mesmo com o campo presente, a assinatura seria matematicamente impossível de verificar.
+**Correção aplicada:**
+- Backend: campo declarado em `BiometricPushRequest`; nova função `_verify_device_signature()` (`api/routes.py`) verifica RSA-2048/SHA256/PKCS1v15 contra chave registrada; novo endpoint `POST /device/register-key` + tabela `device_keys` (`ledger/db.py`); rollout não-disruptivo (sem chave registrada = não bloqueia).
+- Android: `HMACGenerator.buildSigData()` extraído como função pública — o dispositivo agora assina o MESMO texto canônico que o HMAC usa, não mais um payload ad-hoc; `OnboardingViewModel` agora chama `POST /device/register-key` logo após gerar a chave no Secure Element.
+- Testado localmente (TestClient) com chave RSA sintética: registro OK, assinatura válida aceita, assinatura forjada rejeitada com 401, usuário sem chave registrada continua funcionando.
+**Pendente:** nenhuma chamada equivalente existe no app iOS ainda (app não compilado, aguardando Mac).
+
+### GAP-CA-09 — Cinco sinais de segurança calculados pelo Android, descartados pelo servidor
+
+**Severidade:** CRÍTICA → ✅ CORRIGIDO (versão intermediária) 27/09/2026
+**Arquivo:** `licet-android/.../domain/models/Models.kt:144-163` vs. `api/routes.py:92-125`
+
+**Descrição:** `BiometricPushRequest` do Android envia `confidence_score`, `baseline_maturity`, `coercion_risk`, `liveness_passed`, `authorization_level` — comentado no próprio código como "campos extras do Android — para enriquecer o ledger". Nenhum existe no `BiometricPushRequest` do servidor. O mais grave: **`liveness_passed`** — todo o subsistema de desafio de liveness (`LivenessChallengeManager.kt`, com nonce, checagem de timing, validação de resposta fisiológica) roda 100% no cliente, e o resultado nunca chega ao servidor. Um cliente que pule o desafio inteiro e chame `/biometric/push` + `/authorize/from-push` direto (com HMAC válido) é autorizado exatamente igual a quem passou no desafio. Mesma história pra `coercion_risk` (o `CoercionDetector.kt` do Android é descartado; o `coercion_risk` que aparece na resposta vem de um cálculo servidor completamente diferente) e `authorization_level` (o gating por nível do app não tem nenhuma contrapartida no servidor).
+
+**Decisão de escopo (Christian, 27/09/2026):** os 5 campos se dividem em 3 categorias distintas:
+
+1. `confidence_score` / `baseline_maturity` — corretamente locais-only (informam a UI do app sobre a maturidade do próprio baseline), não precisam chegar ao servidor. **Nenhuma mudança.**
+2. `authorization_level` — conceito que o servidor genuinamente não tinha.
+3. `liveness_passed` / `coercion_risk` — computados no cliente, nunca verificados pelo servidor.
+
+Para (2) e (3), aprovada a **"versão intermediária"**: declarar os 3 campos no servidor, cobri-los pelo HMAC (tamper-evident em trânsito, não mais alteráveis sem invalidar a assinatura), persistir no ledger para auditoria — **sem** verificação criptográfica independente do valor. Documentado como limitação aceita, mesma categoria do GAP-B01 (Periodicity Index): o servidor sabe que o cliente *declarou* X, não que X é *verdade*.
+
+**Correção aplicada (27/09/2026):**
+
+- Backend: `BiometricPushRequest` ganhou `authorization_level`, `liveness_passed`, `coercion_risk` (nome no wire mantido igual ao que o Android já usava em `Models.kt` — evita quebrar o app já em produção). Novo formato de sig_data **v4**, cobrindo os 3 campos, com duas variantes: v4-from-v3 (clientes que já assinam o v3 completo) e **v4-from-v2** (o Android real hoje, que só assina o v2 base — sem esta variante o HMAC nunca bateria pro tráfego real). `_verify_mobile_hmac` tenta v4 → v3 → v2-ble → v2, mantendo compatibilidade retroativa total com clientes que ainda não enviam os 3 campos.
+- Ledger: 3 novas colunas em `authorizations` (`client_authorization_level`, `client_liveness_passed`, `client_coercion_risk`), gravadas via `save_client_reported_fields()` — UPDATE pós-inserção, fora do conteúdo protegido por `chain_hash` (mesmo padrão de `revoke_entry()`).
+- Android: `HMACGenerator.generateBiometricWithClientSignals()` (novo) assina v2-base + os 3 campos. `AuthorizeActionUseCase.buildPushRequest()` usa essa função em vez da antiga `generateBiometric()`.
+- **Bug pego durante verificação, corrigido antes de qualquer commit:** o nome do campo no JSON que o Android já enviava é `coercion_risk` (não `client_coercion_risk`) — se o Pydantic do servidor tivesse ficado com o nome que eu escolhi inicialmente, o valor teria sido descartado silenciosamente (unknown field). Corrigido casando o nome do servidor com o que o app já manda.
+- **Segundo bug pego, corrigido:** `str(bool)` em Python produz `"True"/"False"`, `Boolean.toString()` em Kotlin produz `"true"/"false"` — o sig_data nunca teria batido pro campo `liveness_passed`. Corrigido forçando minúsculo no lado servidor.
+- **Terceiro bug pego (o mais sério), corrigido:** o `device_signature` (GAP-CA-08, já validado) é verificado contra o `matched_sig_data` que bateu no HMAC — com v4 tentado primeiro, isso passou a ser o texto v2+sufixo, mas a chave RSA do dispositivo (`sigDataForDeviceKey`) ainda assinava só o v2 base. Sem o fix, `_verify_device_signature` teria começado a rejeitar (401) todo request que incluísse os 3 novos campos — uma regressão silenciosa exatamente do tipo que a regra do CLAUDE.md existe pra pegar. Corrigido fazendo `sigDataForDeviceKey` incluir o mesmo sufixo.
+
+**Verificação real feita:** script ad hoc (padrão TestClient, não pytest — repo não tem suíte pytest) com 8 casos: cliente novo (v4) valida, cliente antigo (v3/v2) continua validando, campo adulterado em trânsito é rejeitado (401), persistência não altera `chain_hash`, binding real via HTTP com a chave JSON exata do Android, formato real do Android (v2 base + sufixo, sem user_id/eda) valida via v4-from-v2, e a interação com device_signature (confirma que o fix era necessário — reproduzido o bug e a correção lado a lado). `gradlew :app:compileDebugKotlin` e `:app:testDebugUnitTest` → `BUILD SUCCESSFUL`, sem precisar alterar nenhum teste existente desta vez.
+
+**Pendente:** nenhuma verificação criptográfica independente de `liveness_passed`/`coercion_risk` — um cliente comprometido ainda pode mentir sobre esses valores (seria preciso um desafio de liveness gerado e verificado pelo servidor, fora de escopo desta correção). iOS ainda não tem equivalente.
+
+### GAP-CA-10 — Alerta silencioso do PIN de emergência: nunca implementado além da comparação local
+
+**Severidade:** CRÍTICA (segurança física do usuário, não só autorização) → ✅ CORRIGIDO (parcialmente) 27/09/2026
+**Arquivo:** `IntentionPinManager.kt` (docstring) vs. busca em todo o app
+
+**Descrição:** O docstring do `IntentionPinManager.kt` documenta que acionar o PIN de emergência deve, simultaneamente: marcar o registro do ledger como possível coerção, disparar alerta silencioso pro contato de emergência, registrar GPS no momento, manter log forense. **Nenhuma dessas quatro coisas acontece.** `UserPreferencesRepository` guarda o contato de emergência, mas nenhum código em todo o app lê esse dado pra enviar SMS, notificação, ou qualquer coisa (busca por `SmsManager`, `LocationManager`, `Twilio`, `FirebaseMessaging` — zero resultados). O onboarding tem um passo `DISTRESS_PIN_SETUP` pedindo pra configurar isso, prometendo uma proteção que não existe.
+
+**Por que isso é mais grave que os outros:** alguém sob coação real, que aperta o PIN de emergência achando que um alerta foi enviado, **não está sendo protegido**. Isso não é uma falha de autorização — é uma falha de segurança física da pessoa, com uma promessa explícita (UI + onboarding) que não é cumprida.
+
+**Mitigação:** implementar de verdade (SMS via API, ou notificação push pro contato, + GPS) antes de apresentar essa funcionalidade como disponível — ou, no mínimo imediato, remover a promessa da UI/onboarding até estar implementada, pra não criar falsa sensação de segurança.
+
+**Correção aplicada (27/09/2026):** `EmergencyAlertManager.kt` (novo) envia SMS
+real via `SmsManager` com link de localização (`LocationManager`, sem
+dependência de Play Services) direto do celular pro contato configurado —
+nunca passa pelo servidor. Log forense local (nunca enviado ao servidor) em
+`UserPreferencesRepository.emergencyAlertLog`, registra sucesso/falha de cada
+tentativa. Wired em `AuthorizeActionUseCase` — dispara sempre que
+`isDistress=true`, sem nunca bloquear a autorização em si mesmo se o alerta
+falhar. Permissões `SEND_SMS`/`ACCESS_FINE_LOCATION` pedidas no onboarding,
+logo após configurar o contato de emergência. Rótulo do campo corrigido pra
+deixar claro que precisa ser telefone (SMS não funciona com e-mail).
+Compilação + suite de testes (`AuthorizeActionUseCaseTest`,
+`HMACGeneratorTest`) verificadas com `BUILD SUCCESSFUL`.
+
+**Ainda pendente:**
+- Não testado em dispositivo físico real (só compilação + testes unitários) —
+  precisa validar envio de SMS de verdade antes de confiar na feature.
+- iOS não tem equivalente (app não compilado, sem Mac ainda).
+- "Marcar o ledger como possível coerção" (parte original da promessa) fica
+  pro GAP-CA-09 (próximo da fila) — é sobre `coercion_risk` chegar ao
+  servidor, não é escopo deste fix.
+
+### GAP-CA-11 — GAP-B08 (baseline poisoning): calculado, nunca persistido
+
+**Severidade:** CRÍTICA → ✅ CORRIGIDO 28/09/2026
+**Arquivo:** `core/baseline.py` vs. `ledger/db.py` (tabela `user_baselines`)
+
+**Descrição:** `detect_baseline_poisoning()` é real e bem construído (5 checagens: espalhamento temporal, plausibilidade populacional, CV, outliers, tendência monotônica). `build_baseline()` chama e anexa o resultado (`poisoning_risk`, `poisoning_flags`, `enrollment_days_covered`) ao objeto `UserBaseline` — mas a tabela `user_baselines` não tinha essas colunas, `save_baseline()` nunca as gravava, `load_baseline()` nunca as lia de volta. Nenhum endpoint, resposta ou painel usava isso em lugar nenhum. **A avaliação inteira era computada em memória e jogada fora.**
+
+**Decisão de escopo (Christian, 28/09/2026):** para risco HIGH, o servidor **só persiste e expõe** (painel admin + GDPR summary) — não bloqueia enrollment nem reduz `trust_level` automaticamente. As outras duas opções (bloquear enrollment, penalizar trust_level) ficam descartadas por ora: a primeira arrisca trancar usuário legítimo com variabilidade atípica (idoso, arritmia benigna); a segunda mexe em `core/crypto.py` (lógica de autorização) e precisaria de teste mais extenso. Reavaliar se algum caso real de HIGH aparecer no painel.
+
+**Correção aplicada (28/09/2026):**
+
+- `ledger/db.py`: 3 novas colunas em `user_baselines` (`poisoning_risk`, `poisoning_flags` JSON, `enrollment_days_covered`), com migração `ALTER TABLE` idempotente.
+- `core/baseline.py`: `save_baseline()` grava os 3 campos; `load_baseline()` lê de volta, com defaults seguros (`"LOW"`, `[]`, `0`) para baselines salvos antes desta migração (colunas `NULL`).
+- `ledger/db.py`: `list_users_status()` (usado por `/admin/dashboard`) e `get_user_data_summary()` (usado por `/gdpr/data/{user_id}`, GDPR Art. 15) agora incluem `poisoning_risk`/`poisoning_flags`/`enrollment_days_covered`.
+- `api/routes.py`: painel `/admin/dashboard` ganhou coluna "Poisoning (GAP-B08)" com badge colorido (cinza=LOW, laranja=MEDIUM, vermelho=HIGH).
+
+**Verificação real feita:** dois scripts ad hoc (padrão TestClient/direto, não pytest). O primeiro cobre round-trip completo (enrollment sintético com padrão suspeito → classifica MEDIUM/HIGH → persiste → recarrega → aparece no painel admin e no GDPR summary) e um caso de sanity (enrollment bem distribuído continua LOW, sem falso positivo). O segundo simula o schema **real de produção** (tabela `user_baselines` sem as 3 colunas, com uma linha pré-existente) e confirma que `ALTER TABLE` adiciona as colunas e a linha antiga sobrevive intacta, carregando com os defaults seguros — o cenário que efetivamente vai rodar no primeiro deploy deste fix.
+
+**Pendente:** nenhuma consequência automática para risco HIGH (decisão consciente, não lacuna) — reavaliar se o painel mostrar um caso real.
+
+### GAP-CA-12 — medication_accommodation: lógica correta no servidor, cliente não tem como acionar
+
+**Severidade:** ALTA (mesmo racional legal do GAP-L05 original) → ✅ CORRIGIDO 28/09/2026
+**Arquivo:** `BaselineSubmitRequest` (Android) vs. `api/routes.py`
+
+**Descrição:** O servidor converte corretamente uma negação por beta-bloqueador em `BETA_BLOCKER_ACCOMMODATED` quando `chronic_beta_blocker_flag` está setado — isso está genuinamente implementado e funcionando. Mas esse flag vem de `on_chronic_beta_blocker` em `POST /baseline/submit`, e o `BaselineSubmitRequest` do Android **não tinha esse campo** — não existia em lugar nenhum do app. Um usuário real com receita de beta-bloqueador não tinha como nunca ser acomodado. Bônus: a mensagem de erro do servidor mandava o usuário chamar `POST /accommodation/register` — **esse endpoint não existe**, dava 404.
+
+**Correção aplicada (28/09/2026):**
+
+- `core/pharmacological_check.py`: mensagem de erro corrigida — não referencia mais o endpoint inexistente, orienta declarar `on_chronic_beta_blocker` nas sessões de calibração (`POST /baseline/submit`).
+- `api/routes.py`: `on_chronic_beta_blocker` agora coberto pelo HMAC (nova variante **v2-bb**, específica de `/baseline/submit` — independente dos campos v4/CA-09, que são exclusivos de `/biometric/push`). Antes desta correção, o campo já existia na declaração server-side mas não era protegido contra adulteração em trânsito.
+- Android: `UserPreferencesRepository` ganhou `chronicBetaBlockerDeclared` (persistido via DataStore, editável a qualquer momento — não é pergunta única de onboarding, já que tratamento médico pode mudar). Novo toggle em Configurações ("Uso de beta-bloqueador") explicando o porquê. `HMACGenerator.generateBaselineSubmit()` assina o v2-bb. Os dois pontos que submetem baseline (`BaselineCollectionService`, coleta contínua em background; `SettingsViewModel`, recalibração manual) leem a preferência e enviam o campo.
+
+**Verificação real feita:** script ad hoc cobrindo: declaração `True` valida via v2-bb; adulteração em trânsito (`True`→`False`) rejeitada com 401; cliente antigo sem o campo continua validando via v2 comum (compat retroativa); fluxo CA-09 (`/biometric/push`) não regrediu; mensagem de erro não referencia mais `/accommodation/register`. Suíte completa de CA-09 re-executada para confirmar ausência de regressão. `gradlew :app:compileDebugKotlin` + `:app:testDebugUnitTest` → `BUILD SUCCESSFUL`.
+
+### GAP-CA-13 — action_commitment (GAP-A04): servidor correto, cliente nunca envia
+
+**Severidade:** ALTA → ✅ CORRIGIDO 28/09/2026
+**Arquivo:** `AuthorizeFromPushRequest` (Android) vs. `core/crypto.py`
+
+**Descrição:** O servidor verifica `action_commitment` corretamente via `hmac.compare_digest` e nega com aviso claro se não bater — mas o Android nunca envia `action_nonce`/`action_commitment`, então toda autorização do app real sempre chega com `ui_binding_status="ABSENT"`. Diferente dos gaps acima, este **degrada graciosamente** (o servidor avisa em vez de falhar silenciosamente) — mas o ataque que o GAP-A04 existe pra prevenir (agente de IA adulterando o action descriptor) não tem defesa real no app publicado hoje.
+
+**Correção aplicada (28/09/2026):**
+
+- `HMACGenerator.kt`: dois métodos novos — `generateActionNonce()` (16 bytes de `SecureRandom`, hex) e `computeActionCommitment(action, agentId, target, nonce)` (`SHA256("action|agent_id|target|nonce")`, mesmo formato e ordem de `compute_action_commitment` no backend).
+- `Models.kt`: `AuthorizeFromPushRequest` ganhou `action_nonce`/`action_commitment` (opcionais, para não quebrar deserialização caso algum caller antigo fique pra trás).
+- Todos os 5 pontos onde o app monta `AuthorizeFromPushRequest` agora geram nonce+commitment antes de enviar: `AuthorizeActionUseCase.execute()` (fluxo genérico com `action`/`agentId`/`target` vindos de `AuthorizationRequest`) e os 4 fluxos hardcoded do `DashboardViewModel` (BLE, Wear, simulação, Watch6 real).
+- Nonce é gerado por chamada de autorização (não persiste entre re-invocações do state machine de `AuthorizeActionUseCase`, que só efetivamente envia ao servidor na última invocação — sem impacto porque o commitment é sempre recomputado com o mesmo nonce que é enviado junto).
+
+**Verificação real feita:** `python -c` reproduzindo manualmente o formato de string do Kotlin (`f"{action}|{agent_id}|{target}|{nonce}"`) e comparando byte a byte com `compute_action_commitment` do backend — hashes idênticos; `verify_action_commitment` confirmado `True` para commitment íntegro e `False` quando um campo (ex: `target`) é adulterado após o commitment já computado. `gradlew :app:compileDebugKotlin` + `:app:testDebugUnitTest` → `BUILD SUCCESSFUL`.
+
+**Limitação residual (aceita, documentada desde a descrição original do GAP-A04):** o commitment protege contra adulteração em trânsito depois que o app já gerou nonce+commitment, mas não é assinado pela chave de dispositivo — um agente de IA com controle total do processo que monta o `AuthorizationRequest`/`AuthorizeFromPushRequest` *antes* da geração do nonce ainda pode construir um par ação-adulterada + commitment-consistente sozinho. Defesa completa requer FIDO2/WebAuthn binding do commitment à chave do dispositivo, já registrado como GAP-A04 v2 no roadmap (não implementado nesta correção).
+
+### Achados menores (MÉDIA) da mesma auditoria
+
+- `POST /ledger/timestamp` não tem `Depends(verify_admin_token)`, diferente de todo outro endpoint que muta estado do ledger — inconsistência na mesma família do CA-01.
+- `HMACGenerator.getAppSecret()` (Android) tem fallback hardcoded `"dev_secret_change_in_production"` — não cria brecha (servidor rejeita HMAC errado), mas é uma mina-terrestre operacional se um build de release regredir silenciosamente.
+
+---
+
 ## Sumário por Dimensão
 
 | Dimensão | Gaps | Críticos | Insolúveis |
@@ -722,7 +864,7 @@ Pendente: revisão de auditoria externa, pen test formal, DPIA (GAP-L01).
 | **GAP-O03/H03** | Revogação aditiva; `POST /admin/revoke/{ledger_id}` |
 | **GAP-A04** | Commitment SHA256(action\|agent_id\|target\|nonce); `ui_binding_status` na resposta |
 | **GAP-L05** | `medication_accommodation` flag; BETA_BLOCKER → BETA_BLOCKER_ACCOMMODATED |
-| **GAP-B08** | 5-check assessment em `build_baseline()`: spread temporal, plausibilidade, CV, outliers, tendência |
+| **GAP-B08** | 5-check assessment em `build_baseline()`: spread temporal, plausibilidade, CV, outliers, tendência; persistido em `user_baselines` e exposto em `/admin/dashboard` + `/gdpr/data/{user_id}` (GAP-CA-11, 28/09/2026) |
 | **GAP-B09** | `threshold_multiplier = 1.4` para Fitzpatrick V-VI; `ppg_equity_warning` na resposta |
 | **GAP-A05** | Zeragem de `ecg_waveform`/`rr_intervals` pós-extração; `GET /gdpr/data/{user_id}`; `DELETE /gdpr/erasure/{user_id}` |
 
