@@ -1,121 +1,147 @@
 ---
-updatedAt: 2026-08-25
+updatedAt: 2026-09-28
 ---
 
 # LICET — Próximos Passos
 
-## ✅ CONCLUÍDO até 25/08/2026
+Este arquivo é a fonte única de "o que fazer agora", lido tanto por sessões
+futuras do Claude quanto pela rotina diária de lembrete (ver seção final).
+Mantido atualizado — se algo aqui está resolvido, mover pra "Concluído" em vez
+de deixar como pendente.
 
-### Backend / Segurança
+## 🔴 URGENTE — sequência de correções em andamento (27/09/2026)
 
-- **CA-01** ✅ `verify_admin_token()` com `hmac.compare_digest()`
-- **CA-02** ✅ `key_hex` removido do response
-- **CA-03** ✅ `rr_intervals` obrigatório para `source != "simulation"`
-- **CA-04** ✅ HMAC v3 cobre todos os campos críticos
-- **CA-05** ✅ Rate limiting via `SlowAPIMiddleware`
-- **CA-06** ✅ HKDF salt = `SHA256(user_id + timestamp)` por sessão
-- **CA-07** ✅ Floats HMAC com `Locale.US` no Android (fix 401 pt-BR)
-- **CA-09** ✅ `bio_payload_hash` no ledger
-- **V2 bug** ✅ Tríade anticolinérgica corrigida (`EDA_SCL is not None` gate)
-- **Threshold IP individual** ✅ `mean + 2σ` do baseline por usuário (floor=0.80)
-- **Cloud SQL** ✅ Baseline persistente entre deploys (PostgreSQL 15, us-central1-a)
-- **Floor RMSSD=100ms²** ✅ GAP-B10 ×1.3 aplicados — validados Ledger #60
-- **S1+S2** ✅ Secrets de produção rotacionados (18/08/2026)
-- **SpO2 fallback** ✅ Campo `spo2_is_fallback` em `BaselineSubmitRequest`
+Auditoria encontrou 5 sinais de segurança calculados pelo Android que nunca
+chegam a influenciar a decisão do servidor. Christian aprovou resolver em
+sequência, por gravidade. Status:
 
-### Android — Opção B (Health Connect / `licet-android/app/`)
+1. ~~**GAP-CA-10 — alerta de emergência**~~ ✅ **CORRIGIDO** (SMS+GPS real,
+   local, testado por compilação+testes unitários — falta testar em
+   dispositivo físico). Ver `security-gaps.md`.
+2. ~~**GAP-CA-09 — liveness/coerção/nível ignorados pelo servidor**~~ ✅
+   **CORRIGIDO (versão intermediária)** — sig_data v4 (HMAC cobre os 3
+   campos), persistido no ledger, sem verificação criptográfica independente
+   (limitação aceita, documentada). 3 bugs reais pegos e corrigidos durante a
+   verificação (nome de campo, capitalização de bool, interação com
+   device_signature/GAP-CA-08). Ver `security-gaps.md`.
+3. ~~**GAP-CA-11 — baseline poisoning computado, nunca persistido**~~ ✅
+   **CORRIGIDO (28/09/2026)** — persistido em `user_baselines`, exposto em
+   `/admin/dashboard` e `/gdpr/data/{user_id}`. Sem consequência automática
+   pra risco HIGH (decisão consciente do Christian — só informativo por
+   ora). Migração testada contra schema real de produção (ALTER TABLE +
+   linha pré-existente sobrevive). Ver `security-gaps.md`.
+4. ~~**GAP-CA-12 — medication_accommodation sem como o app acionar**~~ ✅
+   **CORRIGIDO (28/09/2026)** — toggle em Configurações + HMAC cobrindo o
+   campo (v2-bb) + mensagem de erro do endpoint inexistente corrigida. Ver
+   `security-gaps.md`.
+5. **GAP-CA-13 — action_commitment nunca enviado pelo app** — PRÓXIMO (último
+   da sequência).
 
-- **Dashboard** ✅ Métricas LICET em tempo real
-- **Settings screen** ✅ Provisionar `LICET_MOBILE_APP_SECRET`
-- **Health Connect** ✅ Fallback 7 dias para SpO₂/HRV
-- **Fix IP falso positivo** ✅ `rrIntervals = emptyList()` — Opção B
-- **Fix µ_RMSSD drift** ✅ janelas 24h + HRV rolling 7 dias
-- **Fix baseline 0 sessões** ✅ `hardware_source`, `duration_seconds=180`, `BaselineCollectionService.start()`
-- **SpO2 fallback flag** ✅ `spo2IsFallback` em `BiometricReading`
-- **Ledger #125 AUTORIZADO** ✅ 23/08/2026 — Watch 6 real, pipeline end-to-end
+Detalhes completos: `docs/research/security-gaps.md` GAP-CA-08 a CA-13.
 
-### Android — Opção A (`licet-android/wear/`)
+## 🔴 Caminho crítico — nessa ordem
 
-- **Retry automático** ✅ 1× após 3s para DNS/timeout em `runWearAuthorization()`
-- **Detecção de rede** ✅ `UnknownHostException` + `SocketTimeoutException` → mensagem legível
-- **`getLatestHrv()`** ✅ Adicionado ao `HealthConnectManager` — lê HC 7 dias
-- **HC HRV sempre** ✅ `runWearAuthorization()` usa `getLatestHrv()` (mesma fonte do baseline)
+1. **Escrever a prosa das Seções 3, 4 e 5 do paper VLP** (Threat Model,
+   Protocol Spec, Security Analysis) — rascunho crescendo em
+   `docs/research/paper_vlp_draft.md`. **Seção 3 (Threat Model) concluída em
+   27/09/2026** — modelo de sistema, modelo de adversário formal (5
+   capacidades), 5 classes de adversário, 4 não-objetivos explícitos
+   (incluindo o achado do oracle leak como exemplo real de extração).
+   Faltam Seções 4 e 5. Sem isso o paper não existe pra submeter em venue
+   nenhuma.
+2. **Aguardar resposta MDPI Cryptography** (waiver enviado 29/08/2026) — sem
+   ação possível, só monitorar e-mail.
+3. **Submeter IACR Communications in Cryptology** — checklist pronto em
+   `docs/iacr_cic/README_cic.md`, falta executar (compilar `iacrcc.cls`,
+   gerar versão anônima, submeter). Mecânico, não depende de ninguém.
+4. **PR #103 (IETF draft) — aguardando David Condrey** revisar a correção de
+   25/09 (DCO + 3 blockers). Já cutucamos educadamente. Sem ação possível até
+   ele responder.
+5. **Monitorar oposição INPI** (processo 944297536, RPI 2901) até
+   ~10/10/2026 — sem oposição confirmada até 25/09.
+6. **Auditoria externa de segurança** (Trail of Bits/NCC Group-style) — ainda
+   não iniciada, é pré-requisito pra "pré-mercado", não urgente ainda mas
+   entrar no radar.
 
-### Baseline — 25/08/2026
+## 🟡 Paralelo — não bloqueia o caminho crítico, mas soma valor real
 
-| Meta | Status |
-| ---- | ------ |
-| Baseline zerado (contexto sono) | ✅ 23/08/2026 |
-| 31 sessões acumuladas (acordado) | ✅ 25/08/2026 |
-| maturity=1.0, L1 ativo | ✅ 25/08/2026 |
+- **App iOS** — 3 bugs de HMAC corrigidos (26/09), falta abrir no Xcode
+  (precisa de Mac). Ver memória `project_ios_app_status`.
+- **BLE GATT (Polar H10)** — código pronto dos dois lados, aguardando compra
+  confirmada em 25/09.
+- **Onboarding de colaboradores externos** (Garmin + Samsung Watch 8) —
+  termos prontos (`docs/anpd/`), aguardando e-mails dos dois (segunda-feira).
+- **Health Connect Changes API** — investigação não iniciada, alternativa
+  mais barata que adotar infraestrutura externa pra resolver latência de
+  sincronização (decidimos não adotar `open-wearables`, ver memória
+  `research_repos_wearables_27092026`).
 
-### Publicações
+## 🔴 Incidente resolvido (28/09/2026) — leitura obrigatória antes de migrações futuras
 
-- **Zenodo** ✅ DOI 10.5281/zenodo.21345045 (v2.0)
-- **IACR ePrint** ✅ 2026/110546
-- **SSRN** ✅ Abstract ID 7018458
-- **MDPI Cryptography** ✅ Submetido (aguardando revisão)
-- **IETF draft** ✅ draft-pereira-licet-human-intent-01
-- **PR #103** ✅ Respondido — aguardando 2º passe David Condrey
-- **INPI Processo 944297536** ✅ Publicado RPI 2901 (11/08/2026), oposição até ~10/10/2026
+Deploy do GAP-CA-09/CA-11 quebrou `/ledger/history` e `/biometric/push` em
+produção com HTTP 500 (`UndefinedColumn`), mesmo com todos os testes locais
+(SQLite) passando. Causa: `_migrate_columns()` (`ledger/db.py`) rodava todas
+as migrações numa única transação compartilhada. No **PostgreSQL** (produção
+usa Cloud SQL; testes locais usam SQLite), a primeira coluna "já existente"
+que falha deixa a transação inteira abortada — todo ALTER seguinte falha
+silenciosamente (capturado pelo mesmo `except` genérico), e as colunas novas
+nunca são criadas de verdade. SQLite não tem esse comportamento, por isso
+passou despercebido em todo teste local desta sessão.
 
----
+**Corrigido:** cada migração agora roda na sua própria transação isolada.
+Deploy da correção verificado ao vivo (`licet.dev/v1/ledger/history` voltou a
+200, `/biometric/push` sem mais 500).
 
-## 🔴 URGENTE — Bug #10: APK licet-wear quebrado
+**Lição para toda migração futura:** testes locais com SQLite NÃO detectam
+esse tipo de problema — sempre que uma migração desse tipo for adicionada,
+considerar o comportamento de transação do PostgreSQL antes de assumir que
+"passou no teste local" = "vai funcionar em produção".
 
-**Estado:** APK instalado em 25/08/2026 envia `rr_intervals = null`
-com `source = "samsung_watch"` → servidor retorna **HTTP 422** (CA-03).
-Nenhuma autorização via licet-wear funciona até correção.
+## ✅ Concluído recentemente (28/09/2026)
 
-### Causa raiz
+- GAP-CA-08 a CA-12 corrigidos e testados (ver seção URGENTE acima) — CA-13 é
+  o único aberto
+- Incidente de migração PostgreSQL (transação abortada em cascata) encontrado
+  e corrigido em produção no mesmo dia
+- Paginação real (offset-based) em `/ledger/history` + numeração de página no
+  Dashboard Android ("Últimas Autorizações" não é mais onepage crescendo)
+- Botão de copiar `chain_hash` em cada card de autorização — permite
+  verificação independente por quem receber o resultado
+- Nova caixa "Verify an Authorization" em `licet.dev` (`GET /v1/ledger/verify`)
+  — cola o hash copiado do app, confirma que está no ledger público
+- Corrigido: `LedgerRecord` (Android) ainda esperava campos que o servidor
+  parou de enviar no fix F-10/F-11 (oracle leak, 25/09) — nunca eram lidos
+  na UI, mas o modelo estava desalinhado; alinhado com o schema real
+- Corrigido: link de download quebrado em `licet.dev` (apontava pra
+  `licet-android.apk`, o CI publica como `licet-phone.apk`)
+- `firebase.json`/`.firebaserc` órfãos removidos (nunca commitados, sem uso)
+- `docs/GUIA_COMPLETO_LICET.md`/`.pdf` atualizados (estava parado desde julho)
 
-`TYPE_HEART_RATE` do Wear OS entrega BPM suavizado (~1 Hz).
-`60000/BPM` não é IBI real — causa dois problemas simultâneos:
+## ✅ Concluído recentemente (25-27/09/2026)
 
-1. **RMSSD ≠ baseline:** baseline HC usa IBI real do Samsung Health (µ≈35ms);
-   BPM→RR dá 6–11ms → D² alto → `CAMADA3_DESVIO_BASELINE_INDIVIDUAL`
-2. **IP falso positivo:** variação de BPM em frequência respiratória (RSA normal)
-   aparece como paced breathing → IP=0.86 > floor 0.80 → `PACED_BREATHING_DETECTED`
+- Experimento WESAD rodado e analisado (15/15 sujeitos, GAP-B01 confirmado)
+- Incidente de segurança do oracle D²/IP corrigido e deployado (licet-00066-xn2)
+- Commit do material WESAD feito (`ddb80c0`), dataset 17GB excluído via `.gitignore`
+- Pesquisa de concorrência: nenhum concorrente direto encontrado; monitor
+  mensal automático configurado
+- Decisão de não adotar `open-wearables` como camada de dados
 
-**Tensão de segurança:** remover RR intervals (fix do #2) viola CA-03 (Laborde 2022, BIO-03).
+## Segurança — histórico (não retestar sem motivo)
 
-### Decisão pendente — escolher uma das opções abaixo
+CA-01 a CA-09, V2 (tríade anticolinérgica), F-01 a F-09 (auditoria 07/09) e
+F-10/F-11 (oracle D²/IP, 25/09) todos fechados. Único item aberto sem
+esforço de implementação: F-06 (HMAC v1 legado, prioridade baixa).
 
-| Opção | Descrição | Prós | Contras |
-| ----- | --------- | ---- | ------- |
-| **A** | Reverter para `wearData.rrIntervals` | Mantém CA-03; simples | IP falsos positivos frequentes |
-| **B** | Novo source `samsung_watch_bpm_only` isentado de CA-03 no servidor | Documenta limitação formalmente sem enfraquecer o protocolo principal | Requer mudança no backend + Android |
-| **C** | IBI real via `ExerciseClient` (Health Services for Wear OS) | Solução correta; elimina ambos os problemas | Mais complexo; verificar compatibilidade Watch 6 |
+## Como retomar
 
-**Recomendação:** Opção B como bridge + Opção C no roadmap do licet-wear.
-
-**Para retomar:** dizer `"continua o bug #10 do licet-wear"`
-
----
-
-## PUBLICAÇÕES — Fila
-
-| # | Tarefa | Depende de |
-| - | ------ | ---------- |
-| P1 | Aguardar retorno MDPI | — |
-| P2 | Recurso arXiv cs.CR (submit/7765569) | DOI MDPI |
-| P3 | PR #103 IETF merge (David Condrey — 2º passe pendente) | David |
-
----
-
-## ROADMAP CRIPTOGRÁFICO (não urgente — alinhar antes de implementar)
-
-1. **ZKP:** Schnorr → ZK-SERIES (arXiv:2506.19393) → Groth16+Pedersen (BioZero)
-2. **Assinatura PQC:** Ed25519 → híbrido Ed25519+ML-DSA-44 (2026) → ML-DSA-44 only (2028)
-3. **Anti-clone V4:** OPRF via BFRB (IACR 2025/1211)
-4. **licet-wear IBI real:** `ExerciseClient` ou Samsung Health Sensor SDK (verificar compatibilidade Watch 6 antes)
-
----
-
-## Como retomar em sessão futura
-
-- `"continua o bug #10 do licet-wear"` → resolver conflito CA-03 vs IP falso positivo
-- `"como está o baseline?"` → `curl https://licet.dev/v1/baseline/status?user_id=6103c0171723584a`
-- `"status do ledger"` → `curl https://licet.dev/v1/ledger/history?limit=5`
+- `"vamos continuar"` ou `"o que temos pra fazer"` → este arquivo
+- `"vamos pro CA-13"` → GAP-CA-13 (action_commitment nunca enviado pelo app real)
+- `"escrever seção 3"` / `"4"` / `"5"` → retomar a redação do paper
 - `"status PR #103"` → `gh pr view 103 --repo LF-Decentralized-Trust-labs/proof-of-effort`
-- `"recurso arXiv"` → submeter appeal com DOI MDPI quando disponível
+- `"status ledger"` → `curl https://licet.dev/v1/ledger/history?limit=5`
+- `"chegou o Polar H10"` → testar BLE GATT ponta a ponta
+- `"vamos cadastrar os colaboradores"` → Firebase App Distribution + termos
+
+Detalhes técnicos completos de cada item ficam na memória do Claude Code
+(`C:\Users\chris\.claude\projects\d--NeuroTrust-licet\memory\`), não
+duplicados aqui — este arquivo é o resumo executivo, versionado no repo.
