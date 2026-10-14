@@ -1,5 +1,5 @@
 # LICET — Guia Completo de Aprendizado
-## Para Christian Rodrigues Pereira | eColabs | Julho 2026
+## Para Christian Rodrigues Pereira | eColabs | Julho 2026 (última atualização: 28/09/2026)
 
 > **Como usar este guia:**
 > Este documento foi escrito inteiramente em português para que você possa estudar o LICET
@@ -1162,41 +1162,47 @@ simultaneamente**, o que aumenta exponencialmente a dificuldade.
 - ⚠️ Sinaliza: concentração espectral suspeita ao redor de 0.1 Hz (IP > 0.80)
 - ❌ Não é bloqueante: limitação primária documentada sem mitigação
 
-## 4.3 Status dos Gaps de Segurança (27/07/2026)
+## 4.3 Status dos Gaps de Segurança (atualizado em 28/09/2026)
 
-A tabela abaixo mostra os 11 gaps mitigados em código nas sessões de 07–09/07/2026.
-Para a análise completa de todos os **52 gaps** (incluindo 9 novos do CryptoAudit de 26/07/2026),
-veja `docs/research/security-gaps.md` (v1.1).
+> Esta seção ficou parada em julho por muito tempo — o texto abaixo reflete o estado real
+> em 28/09/2026. Para o detalhe técnico completo de cada gap (vetor de ataque, mitigação,
+> verificação feita), a fonte sempre atualizada é `docs/research/security-gaps.md`.
 
-| Gap | Dimensão | Mitigação implementada |
+**Resumo executivo:** todos os gaps C01–C07, O02, O03/H03, A04, A05, B01, B08, B09, L05
+listados abaixo (a leva original de julho) estão fechados. As duas rodadas de auditoria
+seguintes também fecharam praticamente tudo:
+
+- **CA-01 a CA-09** (auditoria de 26/07 + revisões posteriores): todos fechados.
+- **F-01 a F-11** (auditoria de segurança de 07/09 + oracle D²/IP de 25/09): todos
+  fechados. F-06 (HMAC v1 legado) é o único item aberto sem esforço de implementação —
+  prioridade baixa, aceito como está por ora.
+- **CA-08 a CA-13** (auditoria de integração client↔server, 27–28/09/2026 — a mais
+  recente): achou 6 casos do mesmo padrão — uma proteção real construída de um lado
+  (cliente ou servidor) mas nunca conectada no outro lado, sem ninguém decidir isso
+  conscientemente. Status:
+
+| Gap | Descrição resumida | Status |
 |---|---|---|
-| C01 | Criptografia | Witness ZKP = `HKDF(k_m, intent_hash)` — não reproductível do ledger |
-| C02 | Criptografia | Ed25519 assimétrico; chave pública em `GET /signing-key` |
-| C03 | Criptografia | Merkle root + OpenTimestamps (3 calendários); `POST /ledger/timestamp` |
-| C04 | Criptografia | `server_nonce` gerado pelo servidor por entrada — impede backdating |
-| O02 | Operacional | Shamir (5,3) para k_m; `POST /admin/key/split` e `/combine` |
-| O03/H03 | Operacional/Hardware | Revogação aditiva; `POST /admin/revoke/{ledger_id}` |
-| A04 | IA | Commitment UI antes da captura; `ui_binding_status` na resposta |
-| L05 | Legal | `medication_accommodation`; BETA_BLOCKER_ACCOMMODATED |
-| B08 | Biometria | 5 checks anti-envenenamento em `build_baseline()` |
-| B09 | Biometria/Equidade | Multiplicador ×1.4 para Fitzpatrick V-VI; `ppg_equity_warning` |
-| A05 | IA/Privacidade | Zeragem pós-extração; endpoints GDPR/LGPD Art. 17 |
-| B01 | Biometria | IP ≥ 0.80 bloqueia automaticamente paced breathing — **bypassável via CA-03** |
+| CA-08 | `device_signature` (RSA-2048 no Android Keystore) nunca era verificado pelo servidor | ✅ CORRIGIDO |
+| CA-09 | `authorization_level`/`liveness_passed`/`coercion_risk` do app nunca chegavam a influenciar o servidor, e não eram cobertos pelo HMAC | ✅ CORRIGIDO (versão intermediária — coberto por HMAC e persistido, mas sem verificação criptográfica independente do valor) |
+| CA-10 | Alerta de emergência do PIN de distress (SMS + GPS pro contato) nunca foi implementado, apesar de prometido na UI | ✅ CORRIGIDO |
+| CA-11 | Detecção de baseline poisoning (GAP-B08) era calculada e descartada — nunca persistida | ✅ CORRIGIDO |
+| CA-12 | Acomodação de beta-bloqueador (GAP-L05) sem como o app declarar; mensagem de erro citava endpoint inexistente | ✅ CORRIGIDO |
+| CA-13 | `action_commitment` (GAP-A04) nunca é enviado pelo app real — a proteção contra IA adulterando o action descriptor está sem defesa prática | 🔴 ABERTO — próximo item da fila |
 
-**Achados do CryptoAudit de 26/07/2026 (CA-01 a CA-07) — pendentes:**
+**Achado de segurança colateral, também corrigido (25/09/2026):** o endpoint público
+`/ledger/history` (e a resposta de `/authorize`) estavam retornando o valor exato de D²
+(Mahalanobis) e do IP (Periodicity Index) — violação direta da regra "nunca expor o
+oracle biométrico". Corrigido e reimplantado no mesmo dia; hoje esses endpoints só
+retornam categorias (`trust_level`, `authorized: true/false`), nunca o valor numérico bruto.
 
-| Gap | Severidade | Status | Descrição resumida |
-|---|---|---|---|
-| CA-01 | 🔴 CRÍTICO | ABERTO | `/admin/key/split` e `/combine` sem autenticação — qualquer um acessa |
-| CA-02 | 🔴 CRÍTICO | ABERTO | `k_m` (chave mestra) retornado em plaintext HTTP no `/admin/key/combine` |
-| CA-03 | 🟠 ALTO | ABERTO | Bypass do IP check: omitir `rr_intervals` força HMAC v1 sem análise espectral |
-| CA-04 | 🟠 ALTO | ABERTO | `user_id`, `eda_scl`, `eda_scr`, `skin_temp`, `tremor` fora da cobertura do HMAC |
-| CA-05 | 🟠 ALTO | ABERTO | Sem rate limiting em nenhum endpoint — flooding, oracle Mahalanobis, OOM |
-| CA-06 | 🟡 MÉDIO | ABERTO | HKDF com `salt=None` — reduz entropia da derivação de k_session |
-| CA-07 | 🟡 MÉDIO | ABERTO | Float sem normalização no HMAC — divergência Android/Python (ex: 33.9 vs 33.900001) |
-
-> **O que fazer com CA-01 e CA-02:** são os únicos que afetam produção imediatamente.
-> Antes de dar acesso a qualquer cliente real, corrigir os dois (`api/routes.py` linhas 932–998).
+**Incidente de infraestrutura, também resolvido (28/09/2026):** um deploy que adicionava
+colunas novas ao banco quebrou `/ledger/history` e `/biometric/push` com HTTP 500 em
+produção, mesmo com todos os testes locais passando — porque o teste local usa SQLite,
+que se comporta diferente do PostgreSQL real de produção quando uma migração de schema
+falha no meio de uma transação compartilhada. Corrigido isolando cada migração na sua
+própria transação. Lição permanente: testes locais não substituem verificação contra o
+banco real depois de qualquer deploy que mexa em schema.
 
 ## 4.5 Testes Físicos — Samsung Galaxy Watch 6 (26/07/2026)
 
@@ -1235,7 +1241,18 @@ O protocolo foi testado com dados reais de um Samsung Galaxy Watch 6 (Christian,
 | GET | `/v1/gdpr/data/{user_id}` | GDPR Art. 15 / LGPD Art. 18 II — direito de acesso | A05 |
 | DELETE | `/v1/gdpr/erasure/{user_id}` | GDPR Art. 17 / LGPD Art. 18 VI — direito ao esquecimento | A05 |
 
-**Exemplo de resposta de autorização com novos campos:**
+**Endpoints adicionados em 27–28/09/2026:**
+
+| Método | Endpoint | Função | Gap |
+|---|---|---|---|
+| POST | `/v1/device/register-key` | Registra a chave pública RSA do dispositivo (Android Keystore) | CA-08 |
+| GET | `/v1/ledger/history?limit&offset` | Agora paginado de verdade (antes só trazia as últimas N) — resposta inclui `total` | — |
+| GET | `/v1/ledger/verify?hash=...` | Busca um registro do ledger por `chain_hash` ou `intent_hash` — usado pela caixa de verificação em `licet.dev` e pelo botão de copiar hash no app | — |
+
+**Exemplo de resposta de autorização com os campos atuais (note: desde 25/09/2026 o
+valor exato de D² e do Periodicity Index NUNCA são retornados — só categorias, pra não
+abrir uma brecha de "oracle attack" onde alguém calibra um ataque testando o valor exato
+repetidamente):**
 
 ```json
 {
@@ -1245,7 +1262,7 @@ O protocolo foi testado com dados reais de um Samsung Galaxy Watch 6 (Christian,
   "trust_level": "L1",
   "layer1_ecg": "PASS",
   "layer2_eda": "PASS",
-  "layer3_mahalanobis_d2": 1.47,
+  "layer3_mahalanobis_status": "NORMAL",
   "pharmacological_check": "CLEAN",
   "ui_binding_status": "VERIFIED",
   "ui_binding_warning": null,
@@ -1256,6 +1273,19 @@ O protocolo foi testado com dados reais de um Samsung Galaxy Watch 6 (Christian,
   "timestamp": 1782576000.0
 }
 ```
+
+**Novidades do app Android e do site (27–28/09/2026):**
+
+- Dashboard: a lista "Últimas Autorizações" agora tem páginas numeradas de verdade
+  (busca um lote novo do servidor por página, não só reorganiza o que já tinha
+  carregado) — antes era uma lista só crescendo na mesma tela.
+- Cada card de autorização tem um botão de copiar o `chain_hash`.
+- `licet.dev` ganhou uma caixa "Verify an Authorization" — qualquer pessoa que receba um
+  hash (colado do app) pode colar ali e confirmar, de forma independente, que aquele
+  resultado está mesmo no ledger público (usa o novo `GET /v1/ledger/verify`).
+- Configurações ganhou um toggle "Uso de beta-bloqueador" — quem toma essa medicação de
+  forma prescrita e crônica pode declarar isso, e o servidor passa a acomodar o padrão
+  fisiológico correto em vez de negar por engano (GAP-CA-12/GAP-L05).
 
 **Novo campo no BiometricPushRequest:**
 
@@ -1573,7 +1603,7 @@ Smartwatch   →→→→   ECG: Quem é você?   →→→→
 - ✅ Pipeline completo de três camadas com ZKP
 
 **Propriedade Intelectual:**
-- ✅ IETF Internet-Draft: `draft-pereira-licet-human-intent-01`
+- ✅ IETF Internet-Draft: `draft-pereira-licet-human-intent-02`
 - ✅ Preprint SSRN: Abstract ID 7018458
 - ✅ arXiv cs.CR: ID 7765569 — submetido 13/07/2026 (cs.CR + cs.AI + cs.HC, CC BY)
 - ✅ Timestamp blockchain (Bitcoin, OpenTimestamps, 2026-02-25)
@@ -1710,7 +1740,7 @@ para quando precisar se comunicar com parceiros técnicos internacionais:
 ---
 
 **Para falar sobre IETF:**
-> *"LICET has an Internet-Draft at the IETF: draft-pereira-licet-human-intent-01.
+> *"LICET has an Internet-Draft at the IETF: draft-pereira-licet-human-intent-02.
 > We're aligning with RFC 9334 RATS architecture."*
 
 ---
